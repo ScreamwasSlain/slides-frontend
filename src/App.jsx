@@ -127,6 +127,7 @@ export default function App() {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [payButtonLoading, setPayButtonLoading] = useState(false);
   const [paymentVerified, setPaymentVerified] = useState(false);
+  const [verifyLoading, setVerifyLoading] = useState(false);
 
   const [spinItems, setSpinItems] = useState([0, 20, 50, 80, 100, 0, 20, 50, 80, 100]);
   const [spinShift, setSpinShift] = useState(0);
@@ -301,6 +302,61 @@ export default function App() {
   const paymentUrl = useMemo(() => {
     return paymentInfo?.speedInterfaceUrl || paymentInfo?.hostedInvoiceUrl || null;
   }, [paymentInfo]);
+
+  const verifyPayment = useCallback(async () => {
+    if (!paymentInfo?.invoiceId) return;
+
+    try {
+      setVerifyLoading(true);
+      const resp = await fetch(
+        `${backendUrl.replace(/\/$/, '')}/verify/${encodeURIComponent(paymentInfo.invoiceId)}?socketId=${encodeURIComponent(socketId || '')}`,
+        {
+          method: 'GET'
+        }
+      );
+      const data = await resp.json().catch(() => null);
+
+      if (!resp.ok) {
+        setStatus(data?.error || 'Failed to verify payment');
+        return;
+      }
+
+      if (data?.paid) {
+        setPaymentVerified(true);
+        if (data?.roundKnown === false) {
+          setStatus('Payment detected, but the server does not recognize this invoice. Start a new spin.');
+        } else {
+          setStatus('Payment detected. Spinning...');
+          setShowPaymentModal(false);
+        }
+      }
+    } catch (e) {
+      setStatus(String(e?.message || e || 'Failed to verify payment'));
+    } finally {
+      setVerifyLoading(false);
+    }
+  }, [backendUrl, paymentInfo?.invoiceId, socketId]);
+
+  useEffect(() => {
+    if (!showPaymentModal) return;
+    if (!paymentInfo?.invoiceId) return;
+    if (!socketConnected) return;
+    if (paymentVerified) return;
+
+    let attempts = 0;
+    const maxAttempts = 50;
+
+    const interval = setInterval(() => {
+      attempts += 1;
+      if (attempts > maxAttempts) {
+        clearInterval(interval);
+        return;
+      }
+      verifyPayment();
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [showPaymentModal, paymentInfo?.invoiceId, socketConnected, paymentVerified, verifyPayment]);
 
   const selectedBet = useMemo(() => Number(betAmount), [betAmount]);
 
@@ -541,6 +597,9 @@ export default function App() {
                   {payButtonLoading ? 'Opening…' : 'Pay'}
                 </button>
                 <a className="button secondary" href={paymentUrl} target="_blank" rel="noopener noreferrer">Open Invoice</a>
+                <button className="button secondary" onClick={verifyPayment} disabled={verifyLoading} type="button">
+                  {verifyLoading ? 'Checking…' : "I've paid"}
+                </button>
               </div>
             ) : null}
 

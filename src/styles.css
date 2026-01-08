@@ -276,6 +276,23 @@ a { color: inherit; }
   align-items: center;
 }
 
+ .inputRow .input {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+ }
+
+ @media (max-width: 420px) {
+  .inputRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .iconButton {
+    width: 100%;
+  }
+ }
+
 .iconButton {
   flex: 0 0 auto;
   padding: 12px 12px;
