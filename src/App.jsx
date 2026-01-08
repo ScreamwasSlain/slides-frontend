@@ -4,7 +4,44 @@ import QRCode from 'qrcode.react';
 
 const DEFAULT_BACKEND_URL = 'http://localhost:3001';
 
-const ITEM_W = 152;
+const ITEM_W = 140;
+
+const RARITY = {
+  common: { label: 'Common' },
+  uncommon: { label: 'Uncommon' },
+  rare: { label: 'Rare' },
+  epic: { label: 'Epic' },
+  legendary: { label: 'Legendary' }
+};
+
+function buildRarityMap(payoutOptions) {
+  const vals = Array.from(new Set((payoutOptions || []).map((n) => Number(n)).filter((n) => Number.isFinite(n)))).sort((a, b) => a - b);
+  if (vals.length === 0) return {};
+
+  const nonZero = vals.filter((v) => v > 0);
+  const sorted = nonZero.length > 0 ? nonZero : vals;
+  const n = sorted.length;
+
+  function tierForIndex(i) {
+    if (n <= 1) return 'legendary';
+    const p = i / (n - 1);
+    if (p < 0.25) return 'uncommon';
+    if (p < 0.5) return 'rare';
+    if (p < 0.75) return 'epic';
+    return 'legendary';
+  }
+
+  const m = {};
+  for (const v of vals) {
+    if (v === 0) {
+      m[v] = 'common';
+      continue;
+    }
+    const idx = Math.max(0, sorted.indexOf(v));
+    m[v] = tierForIndex(idx);
+  }
+  return m;
+}
 
 function copyToClipboard(text) {
   const v = String(text || '');
@@ -98,6 +135,7 @@ export default function App() {
   const [spinStage, setSpinStage] = useState(0);
   const [spinFlash, setSpinFlash] = useState(false);
   const [winnerIndex, setWinnerIndex] = useState(null);
+  const [rarityByValue, setRarityByValue] = useState({});
 
   const [copyNotice, setCopyNotice] = useState(null);
 
@@ -160,6 +198,7 @@ export default function App() {
       setStatus(`Result: ${payoutAmount} SATS`);
 
       const opts = Array.isArray(payoutOptions) && payoutOptions.length > 0 ? payoutOptions : [0, bet];
+      setRarityByValue(buildRarityMap(opts));
       const fillerCount = 34;
       const filler = Array.from({ length: fillerCount }, () => opts[Math.floor(Math.random() * opts.length)]);
       const tail = Array.from({ length: 10 }, (_, i) => {
@@ -263,13 +302,9 @@ export default function App() {
     return paymentInfo?.speedInterfaceUrl || paymentInfo?.hostedInvoiceUrl || null;
   }, [paymentInfo]);
 
-  const canStart = socketConnected && lightningAddress.trim() && betAmount;
+  const selectedBet = useMemo(() => Number(betAmount), [betAmount]);
 
-  const lightningAddressQrValue = useMemo(() => {
-    const addr = lightningAddress.trim();
-    if (!addr) return null;
-    return `lightning:${addr}`;
-  }, [lightningAddress]);
+  const canStart = socketConnected && lightningAddress.trim() && betAmount;
 
   const startSpin = useCallback(() => {
     const s = socketRef.current;
@@ -354,25 +389,24 @@ export default function App() {
   }, [spinAnimating, spinStage]);
 
   return (
-    <div className="container">
-      <div className="header">
-        <div className="brand">
-          <h1>BTC Slides</h1>
-          <div className="muted">Pick a bet, pay, then the slides spin and you win whatever lands on the pointer.</div>
-        </div>
-        <div className="muted">{socketConnected ? `Connected (${socketId?.slice(0, 6)})` : 'Offline'}</div>
+    <div className="shell">
+      <div className="topbar">
+        <div className="logo">BTC Slides</div>
+        <div className={`conn ${socketConnected ? 'ok' : 'bad'}`}>{socketConnected ? `Connected (${socketId?.slice(0, 6)})` : 'Offline'}</div>
       </div>
 
-      <div className="card">
-        <div className="row">
-          <div>
-            <label className="label">Speed Lightning Address</label>
+      <div className="layout">
+        <div className="panel">
+          <div className="panelTitle">Manual</div>
+
+          <div className="field">
+            <div className="fieldLabel">Lightning Address</div>
             <div className="inputRow">
               <input
                 className="input"
                 value={lightningAddress}
                 onChange={(e) => setLightningAddress(e.target.value)}
-                placeholder="e.g. username@speed.app"
+                placeholder="username@speed.app"
                 autoComplete="off"
               />
               <button
@@ -380,41 +414,66 @@ export default function App() {
                 onClick={() => copyValue('Lightning address', lightningAddress)}
                 disabled={!lightningAddress.trim()}
                 type="button"
-                title="Copy lightning address"
               >
                 Copy
               </button>
             </div>
-
-            {lightningAddressQrValue ? (
-              <div className="addrQrRow">
-                <div className="addrQr">
-                  <QRCode value={lightningAddressQrValue} size={96} includeMargin />
-                </div>
-                <div className="addrQrInfo">
-                  <div className="muted">Address QR (scan to copy)</div>
-                  <div className="small monoBox">{lightningAddress.trim()}</div>
-                  <div className="copyRow">
-                    <button className="button secondary" onClick={() => copyValue('Lightning address', lightningAddress)} type="button">Copy</button>
-                  </div>
-                </div>
-              </div>
-            ) : null}
           </div>
-          <div>
-            <label className="label">Bet Amount (SATS)</label>
-            <select className="select" value={betAmount} onChange={(e) => setBetAmount(e.target.value)}>
+
+          <div className="field">
+            <div className="fieldLabel">Bet Amount (SATS)</div>
+            <div className="betGrid">
               {betOptions.map((b) => (
-                <option key={b} value={String(b)}>{b}</option>
+                <button
+                  key={b}
+                  type="button"
+                  className={`betPill ${selectedBet === b ? 'active' : ''}`}
+                  onClick={() => setBetAmount(String(b))}
+                >
+                  {b}
+                </button>
               ))}
-            </select>
+            </div>
           </div>
-        </div>
 
-        <div className="actions">
-          <button className="button" disabled={!canStart} onClick={startSpin}>Start</button>
+          <button className="primary" disabled={!canStart} onClick={startSpin}>
+            Spin
+          </button>
+
+          {status ? <div className="panelNote">{status}</div> : <div className="panelNote muted">Ready.</div>}
+          {copyNotice ? <div className="toast">{copyNotice}</div> : null}
+
+          <div className="legend">
+            {Object.entries(RARITY).map(([k, v]) => (
+              <div className={`legendItem rarity-${k}`} key={k}>
+                <span className="legendDot" />
+                <span className="legendText">{v.label}</span>
+              </div>
+            ))}
+          </div>
+
+          {lastOutcome ? (
+            <div className="result">
+              <div className="resultRow">
+                <span className="muted">Bet</span>
+                <b>{lastOutcome.betAmount} SATS</b>
+              </div>
+              <div className="resultRow">
+                <span className="muted">Payout</span>
+                <b>{lastOutcome.payoutAmount} SATS</b>
+              </div>
+              {payoutStatus ? (
+                <div className="resultRow">
+                  <span className="muted">Status</span>
+                  <b>{payoutStatus.ok ? 'Paid' : 'Failed'}</b>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
           <button
-            className="button secondary"
+            className="linkButton"
+            type="button"
             onClick={() => {
               setStatus('');
               setShowPaymentModal(false);
@@ -424,43 +483,35 @@ export default function App() {
           </button>
         </div>
 
-        {status ? <div className="status">{status}</div> : null}
-        {copyNotice ? <div className="toast">{copyNotice}</div> : null}
+        <div className="stage">
+          <div className="stageCard">
+            <div className="stageTop">
+              <div className="stageTitle">Slide</div>
+              <div className="stageSub">Pay, then land on a rarity-themed payout.</div>
+            </div>
 
-        <div className="slidesWrap">
-          <div className={`viewport ${spinFlash ? 'flash' : ''}`} ref={viewportRef}>
-            <div className="pointer" />
-            <div
-              className={`track ${spinAnimating ? 'spinning' : ''} ${spinStage === 2 ? 'settling' : ''}`}
-              style={trackStyle}
-              onTransitionEnd={onTrackTransitionEnd}
-            >
-              {spinItems.map((v, idx) => (
-                <div className={`item ${winnerIndex === idx ? 'winner' : ''}`} key={`${idx}-${v}`}>
-                  <div className="itemInner">
-                    <div className="itemValue">{v}</div>
-                    <div className="itemSub">SATS</div>
-                  </div>
-                </div>
-              ))}
+            <div className={`viewport light ${spinFlash ? 'flash' : ''}`} ref={viewportRef}>
+              <div className="pointer" />
+              <div
+                className={`track ${spinAnimating ? 'spinning' : ''} ${spinStage === 2 ? 'settling' : ''}`}
+                style={trackStyle}
+                onTransitionEnd={onTrackTransitionEnd}
+              >
+                {spinItems.map((v, idx) => {
+                  const tier = rarityByValue?.[Number(v)] || (Number(v) === 0 ? 'common' : 'uncommon');
+                  return (
+                    <div className={`item rarity-${tier} ${winnerIndex === idx ? 'winner' : ''}`} key={`${idx}-${v}`}>
+                      <div className="itemInner">
+                        <div className="itemTier">{RARITY[tier]?.label || 'Common'}</div>
+                        <div className="itemValue">{v}</div>
+                        <div className="itemSub">SATS</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
-
-          {lastOutcome ? (
-            <div className="status">
-              Bet: <b>{lastOutcome.betAmount}</b> SATS | Outcome: <b>{lastOutcome.payoutAmount}</b> SATS
-            </div>
-          ) : null}
-
-          {payoutStatus ? (
-            <div className="status">
-              {payoutStatus.ok ? (
-                <span>Payout status: <b>sent</b></span>
-              ) : (
-                <span>Payout status: <b>failed</b></span>
-              )}
-            </div>
-          ) : null}
         </div>
       </div>
 
@@ -481,7 +532,7 @@ export default function App() {
             </div>
 
             <div className="muted">
-              After payment, the spin will start and your winnings (if any) will be sent to your lightning address.
+              Complete payment in Speed. After confirmation, the reel will spin and winnings (if any) will be paid to your lightning address.
             </div>
 
             {paymentUrl ? (
@@ -493,33 +544,47 @@ export default function App() {
               </div>
             ) : null}
 
-            {paymentInfo?.lightningInvoice || paymentUrl ? (
+            {paymentUrl || paymentInfo?.lightningInvoice ? (
               <div className="qrGrid">
-                <div className="qrCard">
-                  <div className="qrTitle">QR (Lightning Invoice)</div>
-                  <div className="qrWrap">
-                    <QRCode value={paymentInfo?.lightningInvoice || paymentUrl} size={220} includeMargin />
+                {paymentInfo?.lightningInvoice ? (
+                  <div className="qrCard">
+                    <div className="qrTitle">Lightning Invoice (BOLT11)</div>
+                    <div className="qrWrap">
+                      <QRCode value={paymentInfo.lightningInvoice} size={220} includeMargin />
+                    </div>
+                    <div className="copyRow">
+                      <button
+                        className="button secondary"
+                        onClick={() => copyValue('BOLT11 invoice', paymentInfo.lightningInvoice)}
+                        type="button"
+                      >
+                        Copy BOLT11
+                      </button>
+                    </div>
                   </div>
-                  <div className="copyRow">
-                    <button
-                      className="button secondary"
-                      onClick={() => copyValue('Invoice', paymentInfo?.lightningInvoice || paymentUrl)}
-                      type="button"
-                    >
-                      Copy invoice
-                    </button>
+                ) : (
+                  <div className="qrCard">
+                    <div className="qrTitle">Lightning Invoice</div>
+                    <div className="muted" style={{ marginTop: 8 }}>
+                      Not available here. Use the hosted invoice.
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div className="qrCard">
-                  <div className="qrTitle">Payment Link</div>
+                  <div className="qrTitle">Hosted Invoice</div>
+                  {paymentUrl ? (
+                    <div className="qrWrap compact">
+                      <QRCode value={paymentUrl} size={190} includeMargin />
+                    </div>
+                  ) : null}
                   <div className="small monoBox">
                     {paymentUrl || '—'}
                   </div>
                   <div className="copyRow">
                     <button
                       className="button secondary"
-                      onClick={() => copyValue('Payment link', paymentUrl)}
+                      onClick={() => copyValue('Hosted invoice link', paymentUrl)}
                       disabled={!paymentUrl}
                       type="button"
                     >
@@ -542,8 +607,8 @@ export default function App() {
             <div className="small">Invoice ID: {paymentInfo.invoiceId}</div>
             <div className="copyRow" style={{ marginTop: 8 }}>
               <button className="button secondary" onClick={() => copyValue('Invoice ID', paymentInfo.invoiceId)} type="button">Copy invoice id</button>
-              {paymentInfo?.lightningInvoice ? (
-                <button className="button secondary" onClick={() => copyValue('BOLT11 invoice', paymentInfo.lightningInvoice)} type="button">Copy BOLT11</button>
+              {paymentUrl ? (
+                <button className="button secondary" onClick={() => copyValue('Hosted invoice link', paymentUrl)} type="button">Copy link</button>
               ) : null}
             </div>
           </div>
