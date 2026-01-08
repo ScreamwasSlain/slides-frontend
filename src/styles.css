@@ -431,6 +431,7 @@ a { color: inherit; }
   position: absolute;
   inset: 0;
   pointer-events: none;
+  z-index: 2;
   background:
     linear-gradient(90deg, rgba(243, 245, 251, 1.0) 0%, rgba(243, 245, 251, 0.0) 22%, rgba(243, 245, 251, 0.0) 78%, rgba(243, 245, 251, 1.0) 100%);
 }
@@ -446,6 +447,8 @@ a { color: inherit; }
   display: flex;
   height: 100%;
   will-change: transform;
+  position: relative;
+  z-index: 1;
 }
 
 .track.spinning {
@@ -541,6 +544,8 @@ a { color: inherit; }
   left: 50%;
   transform: translateX(-50%);
   width: 0;
+  z-index: 3;
+  pointer-events: none;
 }
 
 .pointer::before {
