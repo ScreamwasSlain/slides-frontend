@@ -322,13 +322,16 @@ export default function App() {
       }
 
       if (data?.paid) {
-        setPaymentVerified(true);
-        if (data?.roundKnown === false) {
-          setStatus('Payment detected, but the server does not recognize this invoice. Start a new spin.');
-        } else {
-          setStatus('Payment detected. Spinning...');
-          setShowPaymentModal(false);
+        const processedOk = data?.processed?.ok === true;
+        if (!processedOk) {
+          setPaymentVerified(false);
+          setStatus('Payment detected, but the server could not match this invoice to your round. Start a new spin.');
+          return;
         }
+
+        setPaymentVerified(true);
+        setStatus('Payment detected. Spinning...');
+        setShowPaymentModal(false);
       }
     } catch (e) {
       setStatus(String(e?.message || e || 'Failed to verify payment'));
