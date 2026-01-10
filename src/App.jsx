@@ -6,6 +6,21 @@ const DEFAULT_BACKEND_URL = 'http://localhost:3001';
 
 const ITEM_W = 140;
 
+const DEFAULT_PAYOUT_TABLE = {
+  20: [0, 20, 50, 80, 100],
+  100: [0, 50, 120, 200, 300],
+  300: [0, 100, 350, 500, 700],
+  500: [0, 200, 400, 800, 1200],
+  1000: [0, 300, 1000, 1500, 3000],
+  5000: [0, 1000, 3000, 5000, 11000],
+  10000: [0, 2000, 5000, 12000, 30000]
+};
+
+const DEFAULT_PAYOUT_WEIGHTS = {
+  20: [36, 50, 9, 4, 1],
+  10000: [250, 250, 250, 249, 1]
+};
+
 const RARITY = {
   common: { label: 'Common' },
   uncommon: { label: 'Uncommon' },
@@ -153,8 +168,8 @@ export default function App() {
   const [betAmount, setBetAmount] = useState(() => localStorage.getItem('slidesBetAmount') || '20');
 
   const [betOptions, setBetOptions] = useState([20, 100, 300, 500, 1000, 5000, 10000]);
-  const [payoutTable, setPayoutTable] = useState(null);
-  const [payoutWeightsByBet, setPayoutWeightsByBet] = useState(null);
+  const [payoutTable, setPayoutTable] = useState(DEFAULT_PAYOUT_TABLE);
+  const [payoutWeightsByBet, setPayoutWeightsByBet] = useState(DEFAULT_PAYOUT_WEIGHTS);
 
   const [status, setStatus] = useState('');
 
