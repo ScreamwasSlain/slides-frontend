@@ -30,7 +30,7 @@ a { color: inherit; }
 .shell {
   max-width: 1220px;
   margin: 0 auto;
-  padding: 18px 16px 44px;
+  padding: 16px 16px 32px;
 }
 
 .topbar {
@@ -90,8 +90,8 @@ a { color: inherit; }
 
 @media (max-width: 760px) {
   :root {
-    --itemW: 112px;
-    --viewportH: 110px;
+    --itemW: 104px;
+    --viewportH: 102px;
   }
 
   .shell {
@@ -115,6 +115,45 @@ a { color: inherit; }
 
   .stageCard {
     padding: 12px;
+  }
+
+  .legend {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 2px;
+  }
+
+  .legendItem {
+    flex: 0 0 auto;
+    padding: 6px 8px;
+  }
+
+  .payoutsBlock {
+    padding: 10px;
+  }
+
+  .payoutsGrid {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 2px;
+  }
+
+  .payoutChip {
+    flex: 0 0 auto;
+    min-width: 108px;
+    padding: 8px;
+  }
+
+  .payoutChipValue {
+    font-size: 16px;
+  }
+
+  .result {
+    padding: 10px;
   }
 }
 
@@ -152,6 +191,12 @@ a { color: inherit; }
   margin-top: 12px;
   font-size: 12px;
   color: #0b1220;
+}
+
+@media (max-height: 760px) {
+  .shell {
+    padding-bottom: 18px;
+  }
 }
 
 .legend {
@@ -278,7 +323,7 @@ a { color: inherit; }
 }
 
 .stage {
-  min-height: 420px;
+  min-height: 0;
 }
 
 .stageCard {
