@@ -14,9 +14,42 @@ const RARITY = {
   legendary: { label: 'Legendary' }
 };
 
-function buildRarityMap(payoutOptions) {
-  const vals = Array.from(new Set((payoutOptions || []).map((n) => Number(n)).filter((n) => Number.isFinite(n)))).sort((a, b) => a - b);
+function buildRarityMap(payoutOptions, payoutWeights) {
+  const rawVals = (payoutOptions || []).map((n) => Number(n)).filter((n) => Number.isFinite(n));
+  const vals = Array.from(new Set(rawVals)).sort((a, b) => a - b);
   if (vals.length === 0) return {};
+
+  const canUseWeights = Array.isArray(payoutWeights) && payoutWeights.length === (payoutOptions || []).length;
+  if (canUseWeights) {
+    const weightByVal = new Map();
+    let total = 0;
+    for (let i = 0; i < payoutOptions.length; i += 1) {
+      const v = Number(payoutOptions[i]);
+      if (!Number.isFinite(v)) continue;
+      const w = Math.max(0, Number(payoutWeights[i]) || 0);
+      total += w;
+      weightByVal.set(v, (weightByVal.get(v) || 0) + w);
+    }
+
+    if (Number.isFinite(total) && total > 0) {
+      const m = {};
+      if (vals.includes(0)) m[0] = 'common';
+
+      const nonZero = vals
+        .filter((v) => v !== 0)
+        .map((v) => ({ v, w: weightByVal.get(v) || 0 }))
+        .sort((a, b) => {
+          if (a.w !== b.w) return a.w - b.w;
+          return b.v - a.v;
+        });
+
+      const tiersRarestFirst = ['legendary', 'epic', 'rare', 'uncommon'];
+      for (let i = 0; i < nonZero.length; i += 1) {
+        m[nonZero[i].v] = tiersRarestFirst[i] || 'uncommon';
+      }
+      return m;
+    }
+  }
 
   const nonZero = vals.filter((v) => v > 0);
   const sorted = nonZero.length > 0 ? nonZero : vals;
@@ -120,6 +153,8 @@ export default function App() {
   const [betAmount, setBetAmount] = useState(() => localStorage.getItem('slidesBetAmount') || '20');
 
   const [betOptions, setBetOptions] = useState([20, 100, 300, 500, 1000, 5000, 10000]);
+  const [payoutTable, setPayoutTable] = useState(null);
+  const [payoutWeightsByBet, setPayoutWeightsByBet] = useState(null);
 
   const [status, setStatus] = useState('');
 
@@ -173,6 +208,14 @@ export default function App() {
       if (Array.isArray(info?.betOptions) && info.betOptions.length > 0) {
         setBetOptions(info.betOptions);
       }
+
+      if (info?.payoutTable && typeof info.payoutTable === 'object') {
+        setPayoutTable(info.payoutTable);
+      }
+
+      if (info?.payoutWeights && typeof info.payoutWeights === 'object') {
+        setPayoutWeightsByBet(info.payoutWeights);
+      }
     };
 
     const onPaymentRequest = (data) => {
@@ -193,28 +236,41 @@ export default function App() {
       setPayButtonLoading(false);
     };
 
-    const onSpinOutcome = ({ betAmount: bet, payoutAmount, payoutOptions }) => {
+    const onSpinOutcome = ({ betAmount: bet, payoutAmount, payoutOptions, payoutWeights }) => {
       setShowPaymentModal(false);
       setLastOutcome({ betAmount: bet, payoutAmount, payoutOptions });
       setStatus(`Result: ${payoutAmount} SATS`);
 
       const opts = Array.isArray(payoutOptions) && payoutOptions.length > 0 ? payoutOptions : [0, bet];
-      setRarityByValue(buildRarityMap(opts));
-      const fillerCount = 34;
-      const filler = Array.from({ length: fillerCount }, () => opts[Math.floor(Math.random() * opts.length)]);
-      const tail = Array.from({ length: 10 }, (_, i) => {
-        if (i >= 6) {
-          return i % 2 === 0 ? payoutAmount : opts[Math.floor(Math.random() * opts.length)];
+      const weights = Array.isArray(payoutWeights) && payoutWeights.length === opts.length ? payoutWeights : null;
+      setRarityByValue(buildRarityMap(opts, weights));
+
+      function sampleFromOpts() {
+        if (!weights) return opts[Math.floor(Math.random() * opts.length)];
+        const total = weights.reduce((a, b) => a + Math.max(0, Number(b) || 0), 0);
+        if (!Number.isFinite(total) || total <= 0) return opts[Math.floor(Math.random() * opts.length)];
+
+        let r = Math.random() * total;
+        for (let i = 0; i < opts.length; i += 1) {
+          r -= Math.max(0, Number(weights[i]) || 0);
+          if (r < 0) return opts[i];
         }
-        return opts[Math.floor(Math.random() * opts.length)];
-      });
-      const items = [...filler, payoutAmount, ...tail];
+        return opts[opts.length - 1];
+      }
+
+      const fillerCount = 34;
+      const tailCount = 14;
+      const totalCount = fillerCount + 1 + tailCount;
+
+      const items = Array.from({ length: totalCount }, () => sampleFromOpts());
+      const targetIndex = fillerCount;
+      items[targetIndex] = payoutAmount;
 
       setSpinItems(items);
 
       const viewportW = viewportRef.current?.clientWidth || 600;
       const pointerX = viewportW / 2;
-      const targetIndex = filler.length;
+      
       setWinnerIndex(targetIndex);
       const targetCenter = targetIndex * ITEM_W + ITEM_W / 2;
       const shift = Math.max(0, targetCenter - pointerX);
@@ -362,6 +418,43 @@ export default function App() {
   }, [showPaymentModal, paymentInfo?.invoiceId, socketConnected, paymentVerified, verifyPayment]);
 
   const selectedBet = useMemo(() => Number(betAmount), [betAmount]);
+
+  useEffect(() => {
+    if (spinAnimating) return;
+    const bet = Number(betAmount);
+    if (!Number.isFinite(bet)) return;
+
+    const opts = Array.isArray(payoutTable?.[bet]) && payoutTable[bet].length > 0
+      ? payoutTable[bet]
+      : [0, bet];
+
+    const weights = Array.isArray(payoutWeightsByBet?.[bet]) && payoutWeightsByBet[bet].length === opts.length
+      ? payoutWeightsByBet[bet]
+      : null;
+
+    setRarityByValue(buildRarityMap(opts, weights));
+
+    function sampleFromOpts() {
+      if (!weights) return opts[Math.floor(Math.random() * opts.length)];
+      const total = weights.reduce((a, b) => a + Math.max(0, Number(b) || 0), 0);
+      if (!Number.isFinite(total) || total <= 0) return opts[Math.floor(Math.random() * opts.length)];
+
+      let r = Math.random() * total;
+      for (let i = 0; i < opts.length; i += 1) {
+        r -= Math.max(0, Number(weights[i]) || 0);
+        if (r < 0) return opts[i];
+      }
+      return opts[opts.length - 1];
+    }
+
+    const previewCount = 18;
+    setWinnerIndex(null);
+    setSpinShift(0);
+    setSpinStage(0);
+    setSpinTransitionMs(0);
+    setSpinFlash(false);
+    setSpinItems(Array.from({ length: previewCount }, () => sampleFromOpts()));
+  }, [betAmount, payoutTable, payoutWeightsByBet, spinAnimating]);
 
   const canStart = socketConnected && lightningAddress.trim() && betAmount;
 
