@@ -87,7 +87,11 @@ a { color: inherit; }
 .stage { grid-area: stage; }
 
 @media (max-width: 980px) {
-  .layout { grid-template-columns: 1fr; }
+  .layout {
+    grid-template-columns: 1fr;
+    grid-template-areas: "stage" "panel";
+    gap: 12px;
+  }
 }
 
 @media (max-width: 760px) {
