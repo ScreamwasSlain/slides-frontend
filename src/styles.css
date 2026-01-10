@@ -12,6 +12,8 @@
   --shadow2: 0 8px 24px rgba(15, 23, 42, 0.08);
   --primary: #16a34a;
   --primary2: #22c55e;
+  --itemW: 140px;
+  --viewportH: 120px;
 }
 
 * { box-sizing: border-box; }
@@ -76,10 +78,44 @@ a { color: inherit; }
   grid-template-columns: 360px 1fr;
   gap: 16px;
   margin-top: 14px;
+  grid-template-areas: "panel stage";
 }
+
+.panel { grid-area: panel; }
+.stage { grid-area: stage; }
 
 @media (max-width: 980px) {
   .layout { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 760px) {
+  :root {
+    --itemW: 112px;
+    --viewportH: 110px;
+  }
+
+  .shell {
+    padding: 12px 12px 34px;
+  }
+
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+  }
+
+  .layout {
+    grid-template-areas: "stage" "panel";
+    gap: 12px;
+  }
+
+  .panel {
+    padding: 12px;
+  }
+
+  .stageCard {
+    padding: 12px;
+  }
 }
 
 .panel {
@@ -485,7 +521,7 @@ a { color: inherit; }
 .viewport {
   position: relative;
   width: 100%;
-  height: 120px;
+  height: var(--viewportH);
   overflow: hidden;
   border-radius: 18px;
   border: 1px solid var(--border);
@@ -531,7 +567,7 @@ a { color: inherit; }
 }
 
 .item {
-  width: 140px;
+  width: var(--itemW);
   flex: 0 0 auto;
   display: flex;
   align-items: center;
@@ -595,6 +631,29 @@ a { color: inherit; }
   line-height: 1;
   color: #0b1220;
   text-shadow: 0 10px 22px rgba(15, 23, 42, 0.12);
+}
+
+@media (max-width: 760px) {
+  .item {
+    padding: 10px;
+  }
+
+  .itemValue {
+    font-size: 26px;
+  }
+
+  .primary {
+    padding: 14px 14px;
+  }
+
+  .betPill {
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+
+  .payoutsGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 .itemSub {

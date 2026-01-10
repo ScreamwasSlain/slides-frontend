@@ -4,7 +4,16 @@ import QRCode from 'qrcode.react';
 
 const DEFAULT_BACKEND_URL = 'http://localhost:3001';
 
-const ITEM_W = 140;
+function getItemWidthPx() {
+  try {
+    const raw = getComputedStyle(document.documentElement).getPropertyValue('--itemW');
+    const n = Number(String(raw || '').trim().replace('px', ''));
+    if (Number.isFinite(n) && n > 0) return n;
+  } catch {
+    // ignore
+  }
+  return 140;
+}
 
 const DEFAULT_PAYOUT_TABLE = {
   20: [0, 20, 50, 80, 100],
@@ -283,14 +292,16 @@ export default function App() {
 
       setSpinItems(items);
 
+      const itemW = getItemWidthPx();
+
       const viewportW = viewportRef.current?.clientWidth || 600;
       const pointerX = viewportW / 2;
       
       setWinnerIndex(targetIndex);
-      const targetCenter = targetIndex * ITEM_W + ITEM_W / 2;
+      const targetCenter = targetIndex * itemW + itemW / 2;
       const shift = Math.max(0, targetCenter - pointerX);
 
-      const overshoot = Math.min(42, Math.max(18, Math.round(ITEM_W * 0.18)));
+      const overshoot = Math.min(42, Math.max(18, Math.round(itemW * 0.18)));
       spinTargetShiftRef.current = shift;
 
       requestAnimationFrame(() => {
