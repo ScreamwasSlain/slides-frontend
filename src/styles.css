@@ -12,8 +12,8 @@
   --shadow2: 0 8px 24px rgba(15, 23, 42, 0.08);
   --primary: #16a34a;
   --primary2: #22c55e;
-  --itemW: 140px;
-  --viewportH: 120px;
+  --itemW: 104px;
+  --viewportH: 90px;
 }
 
 * { box-sizing: border-box; }
@@ -23,6 +23,7 @@ body {
   min-height: 100vh;
   background: var(--bg);
   color: var(--text);
+  overflow-x: hidden;
 }
 
 a { color: inherit; }
@@ -31,6 +32,7 @@ a { color: inherit; }
   max-width: 1220px;
   margin: 0 auto;
   padding: 16px 16px 32px;
+  overflow-x: clip;
 }
 
 .topbar {
@@ -90,8 +92,8 @@ a { color: inherit; }
 
 @media (max-width: 760px) {
   :root {
-    --itemW: 104px;
-    --viewportH: 102px;
+    --itemW: 70px;
+    --viewportH: 72px;
   }
 
   .shell {
@@ -148,6 +150,25 @@ a { color: inherit; }
 
   .result {
     padding: 10px;
+  }
+}
+
+@media (max-width: 420px) {
+  :root {
+    --itemW: 62px;
+    --viewportH: 70px;
+  }
+
+  .itemValue {
+    font-size: 18px;
+  }
+
+  .legend {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .payoutsGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -324,7 +345,7 @@ a { color: inherit; }
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 16px;
-  padding: 14px;
+  padding: 12px;
   box-shadow: var(--shadow);
 }
 
@@ -611,7 +632,7 @@ a { color: inherit; }
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 12px;
+  padding: 8px;
   --rarity: #9ca3af;
   --rarity2: #6b7280;
   --rarityGlow: rgba(156, 163, 175, 0.25);
@@ -664,7 +685,7 @@ a { color: inherit; }
 }
 
 .itemValue {
-  font-size: 30px;
+  font-size: 22px;
   font-weight: 900;
   letter-spacing: 0.2px;
   line-height: 1;
@@ -674,11 +695,11 @@ a { color: inherit; }
 
 @media (max-width: 760px) {
   .item {
-    padding: 10px;
+    padding: 6px;
   }
 
   .itemValue {
-    font-size: 26px;
+    font-size: 18px;
   }
 
   .primary {

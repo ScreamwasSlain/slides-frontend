@@ -282,8 +282,8 @@ export default function App() {
         return opts[opts.length - 1];
       }
 
-      const fillerCount = 34;
-      const tailCount = 14;
+      const fillerCount = 18;
+      const tailCount = 8;
       const totalCount = fillerCount + 1 + tailCount;
 
       const items = Array.from({ length: totalCount }, () => sampleFromOpts());
@@ -304,6 +304,8 @@ export default function App() {
       const overshoot = Math.min(42, Math.max(18, Math.round(itemW * 0.18)));
       spinTargetShiftRef.current = shift;
 
+      const firstStageShift = Math.max(0, shift - overshoot);
+
       requestAnimationFrame(() => {
         setSpinAnimating(false);
         setSpinTransitionMs(0);
@@ -313,9 +315,9 @@ export default function App() {
 
         requestAnimationFrame(() => {
           setSpinAnimating(true);
-          setSpinTransitionMs(3900);
+          setSpinTransitionMs(3200);
           setSpinStage(1);
-          setSpinShift(shift + overshoot);
+          setSpinShift(firstStageShift);
         });
       });
     };
@@ -492,7 +494,7 @@ export default function App() {
       return opts[opts.length - 1];
     }
 
-    const previewCount = 18;
+    const previewCount = 10;
     setWinnerIndex(null);
     setSpinShift(0);
     setSpinStage(0);
@@ -570,7 +572,7 @@ export default function App() {
 
     if (spinStage === 1) {
       setSpinStage(2);
-      setSpinTransitionMs(520);
+      setSpinTransitionMs(420);
       setSpinShift(spinTargetShiftRef.current);
       return;
     }
