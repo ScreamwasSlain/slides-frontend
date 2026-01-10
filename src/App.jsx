@@ -434,6 +434,25 @@ export default function App() {
 
   const selectedBet = useMemo(() => Number(betAmount), [betAmount]);
 
+  const selectedPayoutOptions = useMemo(() => {
+    const bet = Number(selectedBet);
+    if (!Number.isFinite(bet)) return [0];
+    const opts = Array.isArray(payoutTable?.[bet]) && payoutTable[bet].length > 0
+      ? payoutTable[bet]
+      : [0, bet];
+
+    const uniq = [];
+    const seen = new Set();
+    for (const v of opts) {
+      const n = Number(v);
+      if (!Number.isFinite(n)) continue;
+      if (seen.has(n)) continue;
+      seen.add(n);
+      uniq.push(n);
+    }
+    return uniq;
+  }, [selectedBet, payoutTable]);
+
   useEffect(() => {
     if (spinAnimating) return;
     const bet = Number(betAmount);
@@ -617,6 +636,22 @@ export default function App() {
                 <span className="legendText">{v.label}</span>
               </div>
             ))}
+          </div>
+
+          <div className="payoutsBlock">
+            <div className="payoutsTitle">Possible payouts</div>
+            <div className="payoutsGrid">
+              {selectedPayoutOptions.map((v) => {
+                const tier = rarityByValue?.[Number(v)] || (Number(v) === 0 ? 'common' : 'uncommon');
+                return (
+                  <div className={`payoutChip rarity-${tier}`} key={`payout-${selectedBet}-${v}`}>
+                    <div className="payoutChipTier">{RARITY[tier]?.label || 'Common'}</div>
+                    <div className="payoutChipValue">{v}</div>
+                    <div className="payoutChipSub">SATS</div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
           {lastOutcome ? (
