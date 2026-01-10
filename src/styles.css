@@ -118,15 +118,12 @@ a { color: inherit; }
   }
 
   .legend {
-    display: flex;
-    gap: 8px;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    padding-bottom: 2px;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
   }
 
   .legendItem {
-    flex: 0 0 auto;
     padding: 6px 8px;
   }
 
@@ -135,16 +132,13 @@ a { color: inherit; }
   }
 
   .payoutsGrid {
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    padding-bottom: 2px;
   }
 
   .payoutChip {
-    flex: 0 0 auto;
-    min-width: 108px;
+    min-width: 0;
     padding: 8px;
   }
 
