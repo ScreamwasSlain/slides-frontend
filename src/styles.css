@@ -19,13 +19,23 @@
 
 * { box-sizing: border-box; }
 
+html, body {
+  height: 100%;
+}
+
+#root {
+  height: 100%;
+}
+
 body {
   margin: 0;
+  height: calc(var(--vh, 1vh) * 100);
+  height: 100dvh;
   min-height: calc(var(--vh, 1vh) * 100);
   min-height: 100dvh;
   background: var(--bg);
   color: var(--text);
-  overflow-x: hidden;
+  overflow: hidden;
 }
 
 a { color: inherit; }
@@ -38,7 +48,12 @@ a { color: inherit; }
     calc(16px + env(safe-area-inset-right))
     calc(32px + env(safe-area-inset-bottom))
     calc(16px + env(safe-area-inset-left));
-  overflow-x: clip;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow: hidden;
 }
 
 .topbar {
@@ -84,18 +99,31 @@ a { color: inherit; }
 .layout {
   display: grid;
   grid-template-columns: 360px 1fr;
+  grid-template-rows: minmax(0, 1fr);
   gap: 16px;
-  margin-top: 14px;
   grid-template-areas: "panel stage";
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
-.panel { grid-area: panel; }
+.panel {
+  grid-area: panel;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: var(--shadow);
+  min-height: 0;
+  overflow: auto;
+}
+
 .stage { grid-area: stage; }
 
 @media (max-width: 980px) {
   .layout {
     grid-template-columns: 1fr;
     grid-template-areas: "stage" "panel";
+    grid-template-rows: auto minmax(0, 1fr);
     gap: 12px;
   }
 }
@@ -122,6 +150,7 @@ a { color: inherit; }
 
   .layout {
     grid-template-areas: "stage" "panel";
+    grid-template-rows: auto minmax(0, 1fr);
     gap: 12px;
   }
 
@@ -231,14 +260,6 @@ a { color: inherit; }
     padding: 10px 6px;
     font-size: 11px;
   }
-}
-
-.panel {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 14px;
-  box-shadow: var(--shadow);
 }
 
 .panelTitle {
@@ -447,6 +468,7 @@ a { color: inherit; }
 
 .stage {
   min-height: 0;
+  overflow: hidden;
 }
 
 .stageCard {
@@ -455,6 +477,10 @@ a { color: inherit; }
   border-radius: 16px;
   padding: 12px;
   box-shadow: var(--shadow);
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .stageTop {
