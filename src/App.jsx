@@ -15,6 +15,28 @@ function getItemWidthPx() {
   return 140;
 }
 
+function generateWalletId() {
+  try {
+    const bytes = new Uint8Array(16);
+    const c = globalThis?.crypto;
+    if (c?.getRandomValues) c.getRandomValues(bytes);
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  } catch {
+    return `w_${Date.now()}_${Math.random().toString(16).slice(2)}_${Math.random().toString(16).slice(2)}`;
+  }
+}
+
+function generateWalletSecret() {
+  try {
+    const bytes = new Uint8Array(32);
+    const c = globalThis?.crypto;
+    if (c?.getRandomValues) c.getRandomValues(bytes);
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  } catch {
+    return `s_${Date.now()}_${Math.random().toString(16).slice(2)}_${Math.random().toString(16).slice(2)}`;
+  }
+}
+
 const DEFAULT_PAYOUT_TABLE = {
   20: [0, 20, 50, 80, 100],
   100: [0, 50, 120, 200, 300],
@@ -32,7 +54,7 @@ const DEFAULT_PAYOUT_WEIGHTS = {
   500: [36, 50, 9, 4, 1],
   1000: [36, 50, 9, 4, 1],
   5000: [36, 50, 9, 4, 1],
-  10000: [250, 250, 250, 249, 1]
+  10000: [2500, 2500, 2500, 249, 1]
 };
 
 const RARITY = {
@@ -178,12 +200,31 @@ export default function App() {
   const [socketConnected, setSocketConnected] = useState(false);
   const [socketId, setSocketId] = useState(null);
 
+  const [walletId] = useState(() => {
+    const existing = localStorage.getItem('slidesWalletId');
+    if (existing && String(existing).trim().length >= 32) return String(existing).trim();
+    const next = generateWalletId();
+    localStorage.setItem('slidesWalletId', next);
+    return next;
+  });
+
+  const [walletSecret] = useState(() => {
+    const existing = localStorage.getItem('slidesWalletSecret');
+    if (existing && String(existing).trim().length >= 32) return String(existing).trim();
+    const next = generateWalletSecret();
+    localStorage.setItem('slidesWalletSecret', next);
+    return next;
+  });
+
   const [lightningAddress, setLightningAddress] = useState(() => localStorage.getItem('slidesLightningAddress') || '');
   const [betAmount, setBetAmount] = useState(() => localStorage.getItem('slidesBetAmount') || '20');
 
   const [betOptions, setBetOptions] = useState([20, 100, 300, 500, 1000, 5000, 10000]);
+  const [topUpOptions, setTopUpOptions] = useState([1000, 5000, 10000]);
   const [payoutTable, setPayoutTable] = useState(DEFAULT_PAYOUT_TABLE);
   const [payoutWeightsByBet, setPayoutWeightsByBet] = useState(DEFAULT_PAYOUT_WEIGHTS);
+
+  const [walletBalance, setWalletBalance] = useState(0);
 
   const [status, setStatus] = useState('');
 
@@ -215,6 +256,9 @@ export default function App() {
     }
   });
   const [infoOpen, setInfoOpen] = useState(false);
+
+  const [editingAddr, setEditingAddr] = useState(false);
+  const [addrDraft, setAddrDraft] = useState('');
 
   const socketRef = useRef(null);
   const viewportRef = useRef(null);
@@ -286,6 +330,10 @@ export default function App() {
         setBetOptions(info.betOptions);
       }
 
+      if (Array.isArray(info?.topUpOptions) && info.topUpOptions.length > 0) {
+        setTopUpOptions(info.topUpOptions);
+      }
+
       if (info?.payoutTable && typeof info.payoutTable === 'object') {
         setPayoutTable(info.payoutTable);
       }
@@ -303,14 +351,55 @@ export default function App() {
       setPayoutStatus(null);
       setLastOutcome(null);
       setWinnerIndex(null);
-      setStatus(`Pay ${data.amountSats} SATS to spin`);
+      const purpose = String(data?.purpose || 'spin');
+      setStatus(purpose === 'topup' ? `Pay ${data.amountSats} SATS to add to wallet` : `Pay ${data.amountSats} SATS to spin`);
     };
 
     const onPaymentVerified = () => {
       setPaymentVerified(true);
-      setStatus('Payment verified. Spinning...');
+      const purpose = String(paymentInfo?.purpose || 'spin');
+      setStatus(purpose === 'topup' ? 'Payment verified. Crediting wallet...' : 'Payment verified. Spinning...');
       setShowPaymentModal(false);
       setPayButtonLoading(false);
+    };
+
+    const onWalletBalance = (data) => {
+      const b = Number(data?.balanceSats);
+      setWalletBalance(Number.isFinite(b) ? b : 0);
+    };
+
+    const onTopUpConfirmed = (data) => {
+      const b = Number(data?.balanceSats);
+      if (Number.isFinite(b)) setWalletBalance(b);
+      const amt = Number(data?.amountSats) || 0;
+      setStatus(amt > 0 ? `Wallet topped up: +${amt} SATS` : 'Wallet topped up');
+      setShowPaymentModal(false);
+      setPayButtonLoading(false);
+    };
+
+    const onWithdrawalPending = ({ amountSats }) => {
+      const a = Number(amountSats) || 0;
+      setStatus(a > 0 ? `Withdrawing ${a} SATS...` : 'Withdrawing...');
+    };
+
+    const onWithdrawalSent = ({ amountSats, recipient }) => {
+      const a = Number(amountSats) || 0;
+      setStatus(a > 0 ? `Withdrawn ${a} SATS to ${recipient}` : `Withdrawn to ${recipient}`);
+    };
+
+    const onWithdrawalFailed = ({ amountSats, error }) => {
+      const a = Number(amountSats) || 0;
+      setStatus(a > 0 ? `Withdrawal failed for ${a} SATS: ${error}` : `Withdrawal failed: ${error}`);
+    };
+
+    const onAutoRefundSent = ({ amountSats }) => {
+      const a = Number(amountSats) || 0;
+      setStatus(a > 0 ? `Auto-refund sent: ${a} SATS` : 'Auto-refund sent');
+    };
+
+    const onAutoRefundFailed = ({ amountSats, error }) => {
+      const a = Number(amountSats) || 0;
+      setStatus(a > 0 ? `Auto-refund failed for ${a} SATS: ${error}` : `Auto-refund failed: ${error}`);
     };
 
     const onSpinOutcome = ({ betAmount: bet, payoutAmount, payoutOptions, payoutWeights }) => {
@@ -339,7 +428,9 @@ export default function App() {
       const tailCount = 8;
       const totalCount = fillerCount + 1 + tailCount;
 
-      const items = Array.from({ length: totalCount }, () => sampleFromOpts());
+      const base = opts.length > 0 ? opts : [0, bet];
+      const startOffset = Math.floor(Math.random() * base.length);
+      const items = Array.from({ length: totalCount }, (_, i) => base[(i + startOffset) % base.length]);
       const targetIndex = fillerCount;
       items[targetIndex] = payoutAmount;
 
@@ -415,11 +506,25 @@ export default function App() {
     s.on('paymentFailed', onPaymentFailed);
     s.on('paymentExpired', onPaymentExpired);
     s.on('errorMessage', onErrorMessage);
+    s.on('walletBalance', onWalletBalance);
+    s.on('topUpConfirmed', onTopUpConfirmed);
+    s.on('withdrawalPending', onWithdrawalPending);
+    s.on('withdrawalSent', onWithdrawalSent);
+    s.on('withdrawalFailed', onWithdrawalFailed);
+    s.on('autoRefundSent', onAutoRefundSent);
+    s.on('autoRefundFailed', onAutoRefundFailed);
 
     return () => {
       s.disconnect();
     };
   }, [backendUrl]);
+
+  useEffect(() => {
+    const s = socketRef.current;
+    if (!s) return;
+    if (!socketConnected) return;
+    s.emit('getWalletBalance', { walletId, walletSecret, lightningAddress: lightningAddress.trim() || null });
+  }, [socketConnected, walletId, walletSecret, lightningAddress]);
 
   useEffect(() => {
     return () => {
@@ -431,6 +536,11 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('slidesLightningAddress', lightningAddress);
   }, [lightningAddress]);
+
+  useEffect(() => {
+    if (editingAddr) return;
+    setAddrDraft(lightningAddress);
+  }, [lightningAddress, editingAddr]);
 
   useEffect(() => {
     localStorage.setItem('slidesBetAmount', betAmount);
@@ -462,12 +572,13 @@ export default function App() {
         const processedOk = data?.processed?.ok === true;
         if (!processedOk) {
           setPaymentVerified(false);
-          setStatus('Payment detected, but the server could not match this invoice to your round. Start a new spin.');
+          setStatus('Payment detected, but the server could not match this invoice. Please try again.');
           return;
         }
 
         setPaymentVerified(true);
-        setStatus('Payment detected. Spinning...');
+        const purpose = String(paymentInfo?.purpose || 'spin');
+        setStatus(purpose === 'topup' ? 'Payment detected. Crediting wallet...' : 'Payment detected. Spinning...');
         setShowPaymentModal(false);
       }
     } catch (e) {
@@ -499,6 +610,10 @@ export default function App() {
   }, [showPaymentModal, paymentInfo?.invoiceId, socketConnected, paymentVerified, verifyPayment]);
 
   const selectedBet = useMemo(() => Number(betAmount), [betAmount]);
+  const canAfford = useMemo(() => {
+    const bet = Number(selectedBet);
+    return Number.isFinite(bet) && bet > 0 && walletBalance >= bet;
+  }, [selectedBet, walletBalance]);
 
   const selectedPayoutOptions = useMemo(() => {
     const bet = Number(selectedBet);
@@ -558,6 +673,24 @@ export default function App() {
 
   const canStart = socketConnected && lightningAddress.trim() && betAmount;
 
+  const startTopUp = useCallback((amount) => {
+    const s = socketRef.current;
+    if (!s) return;
+    const addr = lightningAddress.trim();
+    if (!addr) {
+      setStatus('Enter your Speed lightning address');
+      return;
+    }
+    const a = Number(amount);
+    if (!Number.isFinite(a)) return;
+
+    setStatus('Creating top up invoice...');
+    setShowPaymentModal(false);
+    setPaymentVerified(false);
+    setPayButtonLoading(false);
+    s.emit('startTopUp', { walletId, walletSecret, lightningAddress: addr, amountSats: a });
+  }, [walletId, walletSecret, lightningAddress]);
+
   const startSpin = useCallback(() => {
     const s = socketRef.current;
     if (!s) return;
@@ -574,16 +707,40 @@ export default function App() {
       return;
     }
 
-    setStatus('Creating invoice...');
-    setShowPaymentModal(false);
-    setPaymentVerified(false);
+    if (walletBalance < bet) {
+      setStatus(`Insufficient wallet balance. Add ${bet - walletBalance} SATS`);
+      return;
+    }
+
+    setStatus('Spinning...');
     setPayoutStatus(null);
     setLastOutcome(null);
     setWinnerIndex(null);
-    setPayButtonLoading(false);
 
-    s.emit('startSpin', { lightningAddress: addr, betAmount: bet });
-  }, [lightningAddress, betAmount]);
+    s.emit('startSpin', { walletId, walletSecret, lightningAddress: addr, betAmount: bet });
+  }, [walletId, walletSecret, lightningAddress, betAmount, walletBalance]);
+
+  const withdrawWallet = useCallback(() => {
+    const s = socketRef.current;
+    if (!s) return;
+
+    const addr = lightningAddress.trim();
+    if (!addr) {
+      setStatus('Enter your Speed lightning address');
+      return;
+    }
+
+    if (walletBalance <= 0) {
+      setStatus('Nothing to withdraw');
+      return;
+    }
+
+    const ok = window.confirm(`Withdraw ${walletBalance} SATS to ${addr}?`);
+    if (!ok) return;
+
+    setStatus('Withdrawing...');
+    s.emit('withdraw', { walletId, walletSecret, lightningAddress: addr });
+  }, [walletId, walletSecret, lightningAddress, walletBalance]);
 
   const onPay = useCallback(() => {
     if (!paymentUrl) {
@@ -645,7 +802,48 @@ export default function App() {
       <div className="topbar">
         <div className="logoWrap">
           <div className="logo">BTC Slides</div>
-          <div className="logoSub">{lightningAddress.trim() || '—'}</div>
+          {editingAddr ? (
+            <div className="topAddrEdit">
+              <input
+                className="input"
+                value={addrDraft}
+                onChange={(e) => setAddrDraft(e.target.value)}
+                placeholder="username@speed.app"
+                autoComplete="off"
+              />
+              <button
+                className="button secondary"
+                type="button"
+                onClick={() => {
+                  setLightningAddress(addrDraft);
+                  setEditingAddr(false);
+                }}
+              >
+                Save
+              </button>
+              <button
+                className="button secondary"
+                type="button"
+                onClick={() => {
+                  setAddrDraft(lightningAddress);
+                  setEditingAddr(false);
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              className="logoSub"
+              type="button"
+              onClick={() => {
+                setAddrDraft(lightningAddress);
+                setEditingAddr(true);
+              }}
+            >
+              {lightningAddress.trim() || 'Tap to set lightning address'}
+            </button>
+          )}
         </div>
         <div className={`conn ${socketConnected ? 'ok' : 'bad'}`}>{socketConnected ? `Connected (${socketId?.slice(0, 6)})` : 'Offline'}</div>
       </div>
@@ -655,15 +853,34 @@ export default function App() {
           <div className="panelTitle">Manual</div>
 
           <div className="field">
-            <div className="fieldLabel">Lightning Address</div>
-            <div className="inputRow">
-              <input
-                className="input"
-                value={lightningAddress}
-                onChange={(e) => setLightningAddress(e.target.value)}
-                placeholder="username@speed.app"
-                autoComplete="off"
-              />
+            <div className="fieldLabel">Wallet Balance</div>
+            <div className="walletBalance">{walletBalance} SATS</div>
+            <div className="topUpGrid">
+              {topUpOptions.map((a) => (
+                <button
+                  key={`topup-${a}`}
+                  className="button secondary"
+                  type="button"
+                  onClick={() => startTopUp(a)}
+                  disabled={!socketConnected || !lightningAddress.trim()}
+                >
+                  Add {a}
+                </button>
+              ))}
+            </div>
+
+            <button
+              className="button secondary"
+              type="button"
+              onClick={withdrawWallet}
+              disabled={!socketConnected || !lightningAddress.trim() || walletBalance <= 0}
+              style={{ marginTop: 10, width: '100%' }}
+            >
+              Withdraw
+            </button>
+
+            <div className="muted" style={{ marginTop: 10 }}>
+              Unused wallet balance auto-refunds after 30 minutes of inactivity. You can withdraw anytime.
             </div>
           </div>
 
@@ -683,7 +900,7 @@ export default function App() {
             </div>
           </div>
 
-          <button className="primary" disabled={!canStart} onClick={startSpin}>
+          <button className="primary" disabled={!canStart || !canAfford} onClick={startSpin}>
             Spin
           </button>
 
@@ -784,7 +1001,7 @@ export default function App() {
           <div className="stageCard">
             <div className="stageTop">
               <div className="stageTitle">Slide</div>
-              <div className="stageSub">Pay, then land on a rarity-themed payout.</div>
+              <div className="stageSub">Top up once, then spin from your wallet balance.</div>
             </div>
 
             <div className={`viewport light ${spinFlash ? 'flash' : ''}`} ref={viewportRef}>
@@ -816,7 +1033,11 @@ export default function App() {
         <div className="modalOverlay" role="dialog" aria-modal="true">
           <div className="modal">
             <div className="modalHeader">
-              <div className="modalTitle">Pay {paymentInfo.amountSats} SATS</div>
+              <div className="modalTitle">
+                {String(paymentInfo?.purpose || 'spin') === 'topup'
+                  ? `Add ${paymentInfo.amountSats} SATS to wallet`
+                  : `Pay ${paymentInfo.amountSats} SATS`}
+              </div>
               <button
                 className="button secondary"
                 onClick={() => {
@@ -829,7 +1050,9 @@ export default function App() {
             </div>
 
             <div className="muted">
-              Complete payment in Speed. After confirmation, the reel will spin and winnings (if any) will be paid to your lightning address.
+              {String(paymentInfo?.purpose || 'spin') === 'topup'
+                ? 'Complete payment in Speed. After confirmation, your wallet balance will be updated.'
+                : 'Complete payment in Speed. After confirmation, the reel will spin and winnings (if any) will be paid to your lightning address.'}
             </div>
 
             {paymentUrl ? (
@@ -874,7 +1097,11 @@ export default function App() {
             ) : null}
 
             {paymentVerified ? (
-              <div className="status">Payment verified. Waiting for spin result…</div>
+              <div className="status">
+                {String(paymentInfo?.purpose || 'spin') === 'topup'
+                  ? 'Payment verified. Waiting for wallet update…'
+                  : 'Payment verified. Waiting for spin result…'}
+              </div>
             ) : (
               <div className="status">Waiting for payment confirmation…</div>
             )}
