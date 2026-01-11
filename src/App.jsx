@@ -643,7 +643,10 @@ export default function App() {
   return (
     <div className="shell">
       <div className="topbar">
-        <div className="logo">BTC Slides</div>
+        <div className="logoWrap">
+          <div className="logo">BTC Slides</div>
+          <div className="logoSub">{lightningAddress.trim() || '—'}</div>
+        </div>
         <div className={`conn ${socketConnected ? 'ok' : 'bad'}`}>{socketConnected ? `Connected (${socketId?.slice(0, 6)})` : 'Offline'}</div>
       </div>
 
@@ -661,14 +664,6 @@ export default function App() {
                 placeholder="username@speed.app"
                 autoComplete="off"
               />
-              <button
-                className="iconButton"
-                onClick={() => copyValue('Lightning address', lightningAddress)}
-                disabled={!lightningAddress.trim()}
-                type="button"
-              >
-                Copy
-              </button>
             </div>
           </div>
 
@@ -860,10 +855,10 @@ export default function App() {
                     <div className="copyRow">
                       <button
                         className="button secondary"
-                        onClick={() => copyValue('BOLT11 invoice', paymentInfo.lightningInvoice)}
+                        onClick={() => copyValue('Payment address', paymentInfo.lightningInvoice)}
                         type="button"
                       >
-                        Copy BOLT11
+                        copy payment address
                       </button>
                     </div>
                   </div>
@@ -871,35 +866,10 @@ export default function App() {
                   <div className="qrCard">
                     <div className="qrTitle">Lightning Invoice</div>
                     <div className="muted" style={{ marginTop: 8 }}>
-                      Not available here. Use the hosted invoice.
+                      Not available here. Use the Pay button.
                     </div>
                   </div>
                 )}
-
-                <div className="qrCard">
-                  <div className="qrTitle">Hosted Invoice</div>
-                  {paymentUrl ? (
-                    <div className="qrWrap compact">
-                      <QRCode value={paymentUrl} size={190} includeMargin />
-                    </div>
-                  ) : null}
-                  <div className="small monoBox">
-                    {paymentUrl || '—'}
-                  </div>
-                  <div className="copyRow">
-                    <button
-                      className="button secondary"
-                      onClick={() => copyValue('Hosted invoice link', paymentUrl)}
-                      disabled={!paymentUrl}
-                      type="button"
-                    >
-                      Copy link
-                    </button>
-                    {paymentUrl ? (
-                      <a className="button secondary" href={paymentUrl} target="_blank" rel="noopener noreferrer">Open</a>
-                    ) : null}
-                  </div>
-                </div>
               </div>
             ) : null}
 
@@ -912,9 +882,6 @@ export default function App() {
             <div className="small">Invoice ID: {paymentInfo.invoiceId}</div>
             <div className="copyRow" style={{ marginTop: 8 }}>
               <button className="button secondary" onClick={() => copyValue('Invoice ID', paymentInfo.invoiceId)} type="button">Copy invoice id</button>
-              {paymentUrl ? (
-                <button className="button secondary" onClick={() => copyValue('Hosted invoice link', paymentUrl)} type="button">Copy link</button>
-              ) : null}
             </div>
           </div>
         </div>
