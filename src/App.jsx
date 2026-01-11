@@ -27,6 +27,11 @@ const DEFAULT_PAYOUT_TABLE = {
 
 const DEFAULT_PAYOUT_WEIGHTS = {
   20: [36, 50, 9, 4, 1],
+  100: [36, 50, 9, 4, 1],
+  300: [36, 50, 9, 4, 1],
+  500: [36, 50, 9, 4, 1],
+  1000: [36, 50, 9, 4, 1],
+  5000: [36, 50, 9, 4, 1],
   10000: [250, 250, 250, 249, 1]
 };
 
@@ -202,11 +207,59 @@ export default function App() {
   const [lastOutcome, setLastOutcome] = useState(null);
   const [payoutStatus, setPayoutStatus] = useState(null);
 
+  const [compactInfo, setCompactInfo] = useState(() => {
+    try {
+      return window.matchMedia && window.matchMedia('(max-width: 760px)').matches;
+    } catch {
+      return false;
+    }
+  });
+  const [infoOpen, setInfoOpen] = useState(false);
+
   const socketRef = useRef(null);
   const viewportRef = useRef(null);
   const spinTargetShiftRef = useRef(0);
   const flashTimeoutRef = useRef(null);
   const copyTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    function syncVhVar() {
+      const h = window?.visualViewport?.height || window.innerHeight;
+      const vh = Number(h) * 0.01;
+      if (Number.isFinite(vh) && vh > 0) {
+        document.documentElement.style.setProperty('--vh', `${vh}px`);
+      }
+    }
+
+    syncVhVar();
+
+    window.addEventListener('resize', syncVhVar);
+    window.addEventListener('orientationchange', syncVhVar);
+
+    const vv = window?.visualViewport;
+    if (vv && vv.addEventListener) vv.addEventListener('resize', syncVhVar);
+
+    return () => {
+      window.removeEventListener('resize', syncVhVar);
+      window.removeEventListener('orientationchange', syncVhVar);
+      if (vv && vv.removeEventListener) vv.removeEventListener('resize', syncVhVar);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!window.matchMedia) return;
+    const mq = window.matchMedia('(max-width: 760px)');
+    const onChange = () => setCompactInfo(Boolean(mq.matches));
+    onChange();
+
+    if (mq.addEventListener) mq.addEventListener('change', onChange);
+    else mq.addListener(onChange);
+
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener('change', onChange);
+      else mq.removeListener(onChange);
+    };
+  }, []);
 
   useEffect(() => {
     const s = io(backendUrl, {
@@ -642,30 +695,64 @@ export default function App() {
           {status ? <div className="panelNote">{status}</div> : <div className="panelNote muted">Ready.</div>}
           {copyNotice ? <div className="toast">{copyNotice}</div> : null}
 
-          <div className="legend">
-            {Object.entries(RARITY).map(([k, v]) => (
-              <div className={`legendItem rarity-${k}`} key={k}>
-                <span className="legendDot" />
-                <span className="legendText">{v.label}</span>
-              </div>
-            ))}
-          </div>
+          {compactInfo ? (
+            <details className="infoDetails" open={infoOpen} onToggle={(e) => setInfoOpen(Boolean(e.currentTarget.open))}>
+              <summary className="infoSummary">Odds & payouts</summary>
+              <div className="infoInner">
+                <div className="legend">
+                  {Object.entries(RARITY).map(([k, v]) => (
+                    <div className={`legendItem rarity-${k}`} key={k}>
+                      <span className="legendDot" />
+                      <span className="legendText">{v.label}</span>
+                    </div>
+                  ))}
+                </div>
 
-          <div className="payoutsBlock">
-            <div className="payoutsTitle">Possible payouts</div>
-            <div className="payoutsGrid">
-              {selectedPayoutOptions.map((v) => {
-                const tier = rarityByValue?.[Number(v)] || (Number(v) === 0 ? 'common' : 'uncommon');
-                return (
-                  <div className={`payoutChip rarity-${tier}`} key={`payout-${selectedBet}-${v}`}>
-                    <div className="payoutChipTier">{RARITY[tier]?.label || 'Common'}</div>
-                    <div className="payoutChipValue">{v}</div>
-                    <div className="payoutChipSub">SATS</div>
+                <div className="payoutsBlock">
+                  <div className="payoutsTitle">Possible payouts</div>
+                  <div className="payoutsGrid">
+                    {selectedPayoutOptions.map((v) => {
+                      const tier = rarityByValue?.[Number(v)] || (Number(v) === 0 ? 'common' : 'uncommon');
+                      return (
+                        <div className={`payoutChip rarity-${tier}`} key={`payout-${selectedBet}-${v}`}>
+                          <div className="payoutChipTier">{RARITY[tier]?.label || 'Common'}</div>
+                          <div className="payoutChipValue">{v}</div>
+                          <div className="payoutChipSub">SATS</div>
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
-            </div>
-          </div>
+                </div>
+              </div>
+            </details>
+          ) : (
+            <>
+              <div className="legend">
+                {Object.entries(RARITY).map(([k, v]) => (
+                  <div className={`legendItem rarity-${k}`} key={k}>
+                    <span className="legendDot" />
+                    <span className="legendText">{v.label}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="payoutsBlock">
+                <div className="payoutsTitle">Possible payouts</div>
+                <div className="payoutsGrid">
+                  {selectedPayoutOptions.map((v) => {
+                    const tier = rarityByValue?.[Number(v)] || (Number(v) === 0 ? 'common' : 'uncommon');
+                    return (
+                      <div className={`payoutChip rarity-${tier}`} key={`payout-${selectedBet}-${v}`}>
+                        <div className="payoutChipTier">{RARITY[tier]?.label || 'Common'}</div>
+                        <div className="payoutChipValue">{v}</div>
+                        <div className="payoutChipSub">SATS</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          )}
 
           {lastOutcome ? (
             <div className="result">
