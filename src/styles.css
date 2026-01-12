@@ -816,7 +816,7 @@ a { color: inherit; }
 }
 
 .trackInner.idle {
-  animation: idleReelScroll 16s linear infinite;
+  animation: idleReelScroll 26s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
