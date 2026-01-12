@@ -226,6 +226,8 @@ export default function App() {
 
   const [walletBalance, setWalletBalance] = useState(0);
 
+  const [showAddCashModal, setShowAddCashModal] = useState(false);
+
   const [status, setStatus] = useState('');
 
   const [paymentInfo, setPaymentInfo] = useState(null);
@@ -262,6 +264,7 @@ export default function App() {
 
   const socketRef = useRef(null);
   const viewportRef = useRef(null);
+  const trackRef = useRef(null);
   const spinTargetShiftRef = useRef(0);
   const flashTimeoutRef = useRef(null);
   const copyTimeoutRef = useRef(null);
@@ -458,6 +461,10 @@ export default function App() {
         setSpinFlash(false);
 
         requestAnimationFrame(() => {
+          try {
+            trackRef.current?.getBoundingClientRect();
+          } catch {
+          }
           setSpinAnimating(true);
           setSpinTransitionMs(3200);
           setSpinStage(1);
@@ -720,28 +727,6 @@ export default function App() {
     s.emit('startSpin', { walletId, walletSecret, lightningAddress: addr, betAmount: bet });
   }, [walletId, walletSecret, lightningAddress, betAmount, walletBalance]);
 
-  const withdrawWallet = useCallback(() => {
-    const s = socketRef.current;
-    if (!s) return;
-
-    const addr = lightningAddress.trim();
-    if (!addr) {
-      setStatus('Enter your Speed lightning address');
-      return;
-    }
-
-    if (walletBalance <= 0) {
-      setStatus('Nothing to withdraw');
-      return;
-    }
-
-    const ok = window.confirm(`Withdraw ${walletBalance} SATS to ${addr}?`);
-    if (!ok) return;
-
-    setStatus('Withdrawing...');
-    s.emit('withdraw', { walletId, walletSecret, lightningAddress: addr });
-  }, [walletId, walletSecret, lightningAddress, walletBalance]);
-
   const onPay = useCallback(() => {
     if (!paymentUrl) {
       setStatus('No payment URL available.');
@@ -772,7 +757,7 @@ export default function App() {
       ? 'cubic-bezier(0.18, 0.90, 0.25, 1.15)'
       : 'cubic-bezier(0.08, 0.85, 0.14, 1.00)';
     return {
-      transform: `translateX(${-spinShift}px)`,
+      transform: `translate3d(${-spinShift}px, 0, 0)`,
       transition: spinAnimating ? `transform ${spinTransitionMs}ms ${easing}` : 'none'
     };
   }, [spinShift, spinAnimating, spinTransitionMs, spinStage]);
@@ -855,32 +840,19 @@ export default function App() {
           <div className="field">
             <div className="fieldLabel">Wallet Balance</div>
             <div className="walletBalance">{walletBalance} SATS</div>
-            <div className="topUpGrid">
-              {topUpOptions.map((a) => (
-                <button
-                  key={`topup-${a}`}
-                  className="button secondary"
-                  type="button"
-                  onClick={() => startTopUp(a)}
-                  disabled={!socketConnected || !lightningAddress.trim()}
-                >
-                  Add {a}
-                </button>
-              ))}
-            </div>
 
             <button
               className="button secondary"
               type="button"
-              onClick={withdrawWallet}
-              disabled={!socketConnected || !lightningAddress.trim() || walletBalance <= 0}
+              onClick={() => setShowAddCashModal(true)}
+              disabled={!socketConnected || !lightningAddress.trim()}
               style={{ marginTop: 10, width: '100%' }}
             >
-              Withdraw
+              Add Cash
             </button>
 
             <div className="muted" style={{ marginTop: 10 }}>
-              Unused wallet balance auto-refunds after 30 minutes of inactivity. You can withdraw anytime.
+              Unused wallet balance auto-refunds after 30 minutes of inactivity.
             </div>
           </div>
 
@@ -1009,6 +981,7 @@ export default function App() {
               <div
                 className={`track ${spinAnimating ? 'spinning' : ''} ${spinStage === 2 ? 'settling' : ''}`}
                 style={trackStyle}
+                ref={trackRef}
                 onTransitionEnd={onTrackTransitionEnd}
               >
                 {spinItems.map((v, idx) => {
@@ -1109,6 +1082,44 @@ export default function App() {
             <div className="small">Invoice ID: {paymentInfo.invoiceId}</div>
             <div className="copyRow" style={{ marginTop: 8 }}>
               <button className="button secondary" onClick={() => copyValue('Invoice ID', paymentInfo.invoiceId)} type="button">Copy invoice id</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showAddCashModal ? (
+        <div className="modalOverlay" role="dialog" aria-modal="true">
+          <div className="modal">
+            <div className="modalHeader">
+              <div className="modalTitle">Add Cash</div>
+              <button className="button secondary" type="button" onClick={() => setShowAddCashModal(false)}>
+                Close
+              </button>
+            </div>
+
+            <div className="muted">
+              Choose an amount to deposit. Your wallet balance will update after payment confirmation.
+            </div>
+
+            <div className="actions" style={{ flexWrap: 'wrap' }}>
+              {topUpOptions.map((a) => (
+                <button
+                  key={`addcash-${a}`}
+                  className="button"
+                  type="button"
+                  onClick={() => {
+                    setShowAddCashModal(false);
+                    startTopUp(a);
+                  }}
+                  disabled={!socketConnected || !lightningAddress.trim()}
+                >
+                  Add {a} SATS
+                </button>
+              ))}
+            </div>
+
+            <div className="muted" style={{ marginTop: 12 }}>
+              Unused wallet balance auto-refunds after 30 minutes of inactivity.
             </div>
           </div>
         </div>
