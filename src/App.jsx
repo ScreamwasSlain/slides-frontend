@@ -427,8 +427,8 @@ export default function App() {
         return opts[opts.length - 1];
       }
 
-      const fillerCount = 18;
-      const tailCount = 8;
+      const fillerCount = 46;
+      const tailCount = 14;
       const totalCount = fillerCount + 1 + tailCount;
 
       const base = opts.length > 0 ? opts : [0, bet];
@@ -466,7 +466,7 @@ export default function App() {
           } catch {
           }
           setSpinAnimating(true);
-          setSpinTransitionMs(3200);
+          setSpinTransitionMs(5600);
           setSpinStage(1);
           setSpinShift(firstStageShift);
         });
@@ -643,6 +643,8 @@ export default function App() {
 
   useEffect(() => {
     if (spinAnimating) return;
+    if (spinShift !== 0) return;
+    if (winnerIndex !== null) return;
     const bet = Number(betAmount);
     if (!Number.isFinite(bet)) return;
 
@@ -676,7 +678,7 @@ export default function App() {
     setSpinTransitionMs(0);
     setSpinFlash(false);
     setSpinItems(Array.from({ length: previewCount }, () => sampleFromOpts()));
-  }, [betAmount, payoutTable, payoutWeightsByBet, spinAnimating]);
+  }, [betAmount, payoutTable, payoutWeightsByBet, spinAnimating, spinShift, winnerIndex]);
 
   const canStart = socketConnected && lightningAddress.trim() && betAmount;
 
@@ -727,6 +729,28 @@ export default function App() {
     s.emit('startSpin', { walletId, walletSecret, lightningAddress: addr, betAmount: bet });
   }, [walletId, walletSecret, lightningAddress, betAmount, walletBalance]);
 
+  const withdrawWallet = useCallback(() => {
+    const s = socketRef.current;
+    if (!s) return;
+
+    const addr = lightningAddress.trim();
+    if (!addr) {
+      setStatus('Enter your Speed lightning address');
+      return;
+    }
+
+    if (walletBalance <= 0) {
+      setStatus('Nothing to withdraw');
+      return;
+    }
+
+    const ok = window.confirm(`Withdraw ${walletBalance} SATS to ${addr}?`);
+    if (!ok) return;
+
+    setStatus('Withdrawing...');
+    s.emit('withdraw', { walletId, walletSecret, lightningAddress: addr });
+  }, [walletId, walletSecret, lightningAddress, walletBalance]);
+
   const onPay = useCallback(() => {
     if (!paymentUrl) {
       setStatus('No payment URL available.');
@@ -767,7 +791,7 @@ export default function App() {
 
     if (spinStage === 1) {
       setSpinStage(2);
-      setSpinTransitionMs(420);
+      setSpinTransitionMs(900);
       setSpinShift(spinTargetShiftRef.current);
       return;
     }
@@ -1116,6 +1140,17 @@ export default function App() {
                   Add {a} SATS
                 </button>
               ))}
+            </div>
+
+            <div className="actions" style={{ marginTop: 10 }}>
+              <button
+                className="button secondary"
+                type="button"
+                onClick={withdrawWallet}
+                disabled={!socketConnected || !lightningAddress.trim() || walletBalance <= 0}
+              >
+                Withdraw
+              </button>
             </div>
 
             <div className="muted" style={{ marginTop: 12 }}>
