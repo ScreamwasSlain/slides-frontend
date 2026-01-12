@@ -995,6 +995,11 @@ a { color: inherit; }
   overflow: auto;
 }
 
+.modal.legalModal {
+  max-width: 880px;
+  padding: 22px;
+}
+
 .modalHeader {
   display: flex;
   justify-content: space-between;
@@ -1147,16 +1152,40 @@ a { color: inherit; }
 .legalBody {
   margin-top: 10px;
   color: #0b1220;
+  font-size: 15px;
+  line-height: 1.7;
 }
 
 .legalH {
-  font-weight: 900;
-  margin-top: 12px;
+  font-weight: 950;
+  margin-top: 18px;
+  font-size: 16px;
 }
 
 .legalP {
-  margin-top: 6px;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.5;
+  margin-top: 8px;
+  color: rgba(15, 23, 42, 0.75);
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.legalUl {
+  margin-top: 10px;
+  padding-left: 18px;
+  color: rgba(15, 23, 42, 0.75);
+}
+
+.legalUl li {
+  margin-top: 8px;
+}
+
+@media (max-width: 760px) {
+  .modal.legalModal {
+    max-width: 94vw;
+    padding: 16px;
+  }
+
+  .legalH {
+    font-size: 15px;
+  }
 }

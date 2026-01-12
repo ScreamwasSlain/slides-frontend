@@ -1217,7 +1217,7 @@ export default function App() {
 
       {showLegalModal ? (
         <div className="modalOverlay" role="dialog" aria-modal="true">
-          <div className="modal">
+          <div className="modal legalModal">
             <div className="modalHeader">
               <div className="modalTitle">{legalDoc === 'privacy' ? 'Privacy Policy' : 'Terms & Conditions'}</div>
               <button
@@ -1235,58 +1235,85 @@ export default function App() {
             <div className="legalBody">
               {legalDoc === 'privacy' ? (
                 <>
-                  <div className="legalH">1. Overview</div>
-                  <div className="legalP">This Privacy Policy explains what information BTC Slides collects, how it is used, and your choices. This is a draft provided for informational purposes only and may require legal review for your jurisdiction.</div>
+                  <div className="legalP"><b>Effective date:</b> {new Date().toISOString().slice(0, 10)}. <b>Operator:</b> [YOUR LEGAL NAME / COMPANY]. <b>Contact:</b> [YOUR SUPPORT EMAIL].</div>
 
-                  <div className="legalH">2. What we collect</div>
-                  <div className="legalP">We may collect your lightning address (to bind your game wallet and to process withdrawals/auto-refunds), your wallet ID (a random identifier), gameplay events (e.g., bets/spins and timestamps), and technical logs needed to operate the service.</div>
+                  <div className="legalH">1. Overview</div>
+                  <div className="legalP">This Privacy Policy describes how the operator of this BTC Slides deployment (“we”, “us”) collects, uses, and shares information when you use the game. If your local law requires additional disclosures (e.g., GDPR/CCPA), you may need to supplement this policy.</div>
+
+                  <div className="legalH">2. Information we collect</div>
+                  <ul className="legalUl">
+                    <li>Lightning address you provide (used to bind your in-game wallet and send withdrawals/auto-refunds).</li>
+                    <li>Wallet identifiers (e.g., wallet ID) and authentication material (e.g., wallet secret) used to operate the wallet system.</li>
+                    <li>Gameplay and wallet events (bets, spins, outcomes, timestamps) for operating the service, fraud prevention, and support.</li>
+                    <li>Technical data (IP address, user agent, logs) to secure and maintain the service.</li>
+                  </ul>
 
                   <div className="legalH">3. Payments</div>
-                  <div className="legalP">Deposits and withdrawals are processed through the configured Lightning payment provider. We do not store your private keys. We may store invoice IDs and payment status for reconciliation and anti-fraud.</div>
+                  <div className="legalP">Deposits and withdrawals are processed via a Lightning payment provider. We do not control Lightning network performance. We may store invoice IDs, amounts, and status to prevent double-crediting and to provide customer support.</div>
 
-                  <div className="legalH">4. How we use data</div>
-                  <div className="legalP">We use information to provide the game, maintain wallet balances, prevent abuse, comply with legal obligations, and improve reliability.</div>
+                  <div className="legalH">4. How we use information</div>
+                  <ul className="legalUl">
+                    <li>Provide and operate the game and wallet features.</li>
+                    <li>Detect and prevent abuse, fraud, and security incidents.</li>
+                    <li>Comply with legal obligations and enforce these policies.</li>
+                    <li>Improve performance, reliability, and user experience.</li>
+                  </ul>
 
-                  <div className="legalH">5. Storage & retention</div>
-                  <div className="legalP">Wallet and invoice information may be stored on the server to maintain balances and prevent double-crediting. We retain information as long as needed for operational and legal purposes.</div>
+                  <div className="legalH">5. Sharing</div>
+                  <div className="legalP">We share information with (a) the payment provider to create invoices and send withdrawals/auto-refunds, and (b) infrastructure providers (hosting, monitoring) to run the service. We may also share information if required by law or to protect our rights and users.</div>
 
-                  <div className="legalH">6. Sharing</div>
-                  <div className="legalP">We share information with payment providers only as necessary to create invoices and send withdrawals/auto-refunds, and with service providers as needed to host and operate the service.</div>
+                  <div className="legalH">6. Retention</div>
+                  <div className="legalP">We retain information as needed to operate the service, maintain wallet balances, prevent abuse, resolve disputes, and comply with legal obligations. Retention periods can vary depending on jurisdiction and operational needs.</div>
 
                   <div className="legalH">7. Security</div>
-                  <div className="legalP">We use reasonable safeguards, but no method of transmission or storage is 100% secure. Use the service at your own risk.</div>
+                  <div className="legalP">We use reasonable safeguards, but no system is perfectly secure. You are responsible for securing your devices and any credentials you use. Use the service at your own risk.</div>
 
                   <div className="legalH">8. Your choices</div>
-                  <div className="legalP">You can withdraw your wallet balance at any time. If you stop playing, the service may auto-refund your remaining balance after a period of inactivity.</div>
+                  <div className="legalP">You may withdraw your in-game wallet balance to your lightning address. If you stop using the service, the system may auto-refund remaining wallet balance after a period of inactivity.</div>
 
-                  <div className="legalH">9. Contact</div>
-                  <div className="legalP">For privacy requests, contact the operator of this BTC Slides deployment.</div>
+                  <div className="legalH">9. International users</div>
+                  <div className="legalP">By using the service, you understand your information may be processed in the jurisdictions where we or our providers operate.</div>
                 </>
               ) : (
                 <>
+                  <div className="legalP"><b>Effective date:</b> {new Date().toISOString().slice(0, 10)}. <b>Operator:</b> [YOUR LEGAL NAME / COMPANY]. <b>Contact:</b> [YOUR SUPPORT EMAIL].</div>
+
                   <div className="legalH">1. Acceptance</div>
-                  <div className="legalP">By using BTC Slides and/or depositing sats, you agree to these Terms. This is a draft provided for informational purposes only and may require legal review for your jurisdiction.</div>
+                  <div className="legalP">By accessing or using BTC Slides, and/or by depositing sats (or any other value) into the in-game wallet, you agree to these Terms. If you do not agree, do not use the service.</div>
 
-                  <div className="legalH">2. The game</div>
-                  <div className="legalP">BTC Slides is an entertainment game. Outcomes are determined by configured payout tables/weights and may include promotional or onboarding sequences for new wallets.</div>
+                  <div className="legalH">2. Eligibility and legality</div>
+                  <div className="legalP">You must be legally permitted to use this service in your jurisdiction. You are responsible for determining whether your use is lawful, and for any taxes or reporting obligations.</div>
 
-                  <div className="legalH">3. Wallet balance</div>
-                  <div className="legalP">Deposits and winnings are credited to an in-game wallet balance. You may request withdrawal to your bound lightning address. The service may auto-refund remaining wallet balance after a period of inactivity.</div>
+                  <div className="legalH">3. The game and odds</div>
+                  <div className="legalP">BTC Slides is an entertainment game. Outcomes are determined by the server’s configured payout tables/weights and may include promotional or onboarding sequences for new wallets. Displayed odds/payouts are informational and may change.</div>
 
-                  <div className="legalH">4. Withdrawals & auto-refunds</div>
-                  <div className="legalP">Withdrawals are subject to provider availability, network conditions, fees, compliance requirements, and anti-fraud checks. Auto-refunds are best-effort; do not rely on timing guarantees.</div>
+                  <div className="legalH">4. Wallet balance; deposits; withdrawals</div>
+                  <ul className="legalUl">
+                    <li>Deposits and winnings are credited to an in-game wallet balance.</li>
+                    <li>You may request withdrawal to your provided lightning address.</li>
+                    <li>Withdrawals and auto-refunds are best-effort and depend on provider/network availability and risk controls.</li>
+                  </ul>
 
-                  <div className="legalH">5. No guarantees</div>
-                  <div className="legalP">We do not guarantee uninterrupted service, exact payout timing, or error-free operation. The game may be updated, paused, or discontinued at any time.</div>
+                  <div className="legalH">5. No warranties</div>
+                  <div className="legalP">The service is provided “as is” and “as available”, without warranties of any kind to the maximum extent permitted by law. We do not guarantee uninterrupted service, error-free operation, exact payout timing, or that the service will meet your requirements.</div>
 
-                  <div className="legalH">6. Responsible use</div>
-                  <div className="legalP">Do not use the service if prohibited by law in your jurisdiction. You are responsible for taxes, reporting, and compliance related to your use.</div>
+                  <div className="legalH">6. Limitation of liability</div>
+                  <div className="legalP">To the maximum extent permitted by law, we are not liable for any indirect, incidental, special, consequential, or punitive damages, or any loss of profits, revenue, data, or goodwill, arising out of or related to your use of the service. Our total liability for any claim is limited to the greater of (a) the amount of fees paid to us (if any) in the 30 days before the event giving rise to the claim, or (b) 0 sats.</div>
 
-                  <div className="legalH">7. Limitation of liability</div>
-                  <div className="legalP">To the maximum extent permitted by law, the operator is not liable for indirect or consequential damages, lost profits, or losses arising from use of the service, including payment-provider failures.</div>
+                  <div className="legalH">7. Assumption of risk</div>
+                  <div className="legalP">You understand that Lightning payments may fail, be delayed, or be irreversible, and that network fees, routing, provider downtime, or other issues may affect deposits/withdrawals. You assume these risks.</div>
 
-                  <div className="legalH">8. Contact</div>
-                  <div className="legalP">For support, contact the operator of this BTC Slides deployment.</div>
+                  <div className="legalH">8. Indemnity</div>
+                  <div className="legalP">You agree to indemnify and hold us harmless from claims, damages, liabilities, and expenses arising from your use of the service, your violation of these Terms, or your violation of any law or rights of a third party.</div>
+
+                  <div className="legalH">9. Disputes; governing law; venue</div>
+                  <div className="legalP">Governing law and venue depend on the operator’s jurisdiction: [INSERT GOVERNING LAW / COUNTRY/STATE]. If your jurisdiction restricts certain dispute terms (e.g., arbitration/class-action waivers), those restrictions apply.</div>
+
+                  <div className="legalH">10. Termination</div>
+                  <div className="legalP">We may suspend or terminate access to the service at any time. You remain responsible for any activity conducted via your wallet credentials.</div>
+
+                  <div className="legalH">11. Changes</div>
+                  <div className="legalP">We may update these Terms from time to time. Continued use after changes means you accept the updated Terms.</div>
                 </>
               )}
             </div>
