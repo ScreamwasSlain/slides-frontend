@@ -227,6 +227,8 @@ export default function App() {
   const [walletBalance, setWalletBalance] = useState(0);
 
   const [showAddCashModal, setShowAddCashModal] = useState(false);
+  const [showLegalModal, setShowLegalModal] = useState(false);
+  const [legalDoc, setLegalDoc] = useState(null);
 
   const [status, setStatus] = useState('');
 
@@ -473,13 +475,28 @@ export default function App() {
       });
     };
 
-    const onPayoutSent = ({ payoutAmount, recipient }) => {
-      setPayoutStatus({ ok: true, payoutAmount, recipient });
-      setStatus(payoutAmount > 0 ? `Paid ${payoutAmount} SATS to ${recipient}` : 'No payout this spin (0 SATS)');
+    const onPayoutSent = ({ payoutAmount, recipient, creditedToWallet, balanceSats }) => {
+      const a = Number(payoutAmount) || 0;
+      const credited = Boolean(creditedToWallet) || String(recipient || '') === 'wallet';
+      setPayoutStatus({ ok: true, payoutAmount: a, recipient: credited ? 'wallet' : recipient, creditedToWallet: credited, balanceSats });
+
+      if (a <= 0) {
+        setStatus('No win this spin (0 SATS)');
+        return;
+      }
+
+      if (credited) {
+        const b = Number(balanceSats);
+        setStatus(Number.isFinite(b) ? `Won ${a} SATS (added to wallet, balance ${b})` : `Won ${a} SATS (added to wallet)`);
+        return;
+      }
+
+      setStatus(`Paid ${a} SATS to ${recipient}`);
     };
 
     const onPayoutFailed = ({ payoutAmount, recipient, error }) => {
-      setPayoutStatus({ ok: false, payoutAmount, recipient, error });
+      const a = Number(payoutAmount) || 0;
+      setPayoutStatus({ ok: false, payoutAmount: a, recipient, error });
       setStatus(`Payout failed: ${error}`);
     };
 
@@ -776,6 +793,11 @@ export default function App() {
     showCopied(ok ? `${label} copied` : 'Copy failed');
   }, [showCopied]);
 
+  const openLegal = useCallback((doc) => {
+    setLegalDoc(doc);
+    setShowLegalModal(true);
+  }, []);
+
   const trackStyle = useMemo(() => {
     const easing = spinStage === 2
       ? 'cubic-bezier(0.18, 0.90, 0.25, 1.15)'
@@ -785,6 +807,30 @@ export default function App() {
       transition: spinAnimating ? `transform ${spinTransitionMs}ms ${easing}` : 'none'
     };
   }, [spinShift, spinAnimating, spinTransitionMs, spinStage]);
+
+  const idleActive = useMemo(() => !spinAnimating && spinShift === 0 && winnerIndex === null, [spinAnimating, spinShift, winnerIndex]);
+
+  const idleReelItems = useMemo(() => {
+    const base = Array.isArray(selectedPayoutOptions) && selectedPayoutOptions.length > 0
+      ? selectedPayoutOptions
+      : [0];
+
+    const oneLen = Math.max(12, base.length * 8);
+    const one = Array.from({ length: oneLen }, (_, i) => base[i % base.length]);
+    return one.concat(one);
+  }, [selectedPayoutOptions]);
+
+  const idleInnerStyle = useMemo(() => {
+    const itemW = getItemWidthPx();
+    const base = Array.isArray(selectedPayoutOptions) && selectedPayoutOptions.length > 0
+      ? selectedPayoutOptions
+      : [0];
+    const oneLen = Math.max(12, base.length * 8);
+    const shiftPx = oneLen * itemW;
+    return {
+      '--idleShift': `${shiftPx}px`
+    };
+  }, [selectedPayoutOptions]);
 
   const onTrackTransitionEnd = useCallback(() => {
     if (!spinAnimating) return;
@@ -975,7 +1021,7 @@ export default function App() {
               {payoutStatus ? (
                 <div className="resultRow">
                   <span className="muted">Status</span>
-                  <b>{payoutStatus.ok ? 'Paid' : 'Failed'}</b>
+                  <b>{payoutStatus.ok ? (payoutStatus.creditedToWallet || String(payoutStatus.recipient || '') === 'wallet' ? 'Credited' : 'Paid') : 'Failed'}</b>
                 </div>
               ) : null}
             </div>
@@ -997,7 +1043,7 @@ export default function App() {
           <div className="stageCard">
             <div className="stageTop">
               <div className="stageTitle">Slide</div>
-              <div className="stageSub">Top up once, then spin from your wallet balance.</div>
+              <div className="stageSub">Top up once, then spin from your wallet. Winnings are added to your wallet balance.</div>
             </div>
 
             <div className={`viewport light ${spinFlash ? 'flash' : ''}`} ref={viewportRef}>
@@ -1008,18 +1054,20 @@ export default function App() {
                 ref={trackRef}
                 onTransitionEnd={onTrackTransitionEnd}
               >
-                {spinItems.map((v, idx) => {
-                  const tier = rarityByValue?.[Number(v)] || (Number(v) === 0 ? 'common' : 'uncommon');
-                  return (
-                    <div className={`item rarity-${tier} ${winnerIndex === idx ? 'winner' : ''}`} key={`${idx}-${v}`}>
-                      <div className="itemInner">
-                        <div className="itemTier">{RARITY[tier]?.label || 'Common'}</div>
-                        <div className="itemValue">{v}</div>
-                        <div className="itemSub">SATS</div>
+                <div className={`trackInner ${idleActive ? 'idle' : ''}`} style={idleActive ? idleInnerStyle : undefined}>
+                  {(idleActive ? idleReelItems : spinItems).map((v, idx) => {
+                    const tier = rarityByValue?.[Number(v)] || (Number(v) === 0 ? 'common' : 'uncommon');
+                    return (
+                      <div className={`item rarity-${tier} ${winnerIndex === idx ? 'winner' : ''}`} key={`${idx}-${v}`}>
+                        <div className="itemInner">
+                          <div className="itemTier">{RARITY[tier]?.label || 'Common'}</div>
+                          <div className="itemValue">{v}</div>
+                          <div className="itemSub">SATS</div>
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </div>
@@ -1049,7 +1097,7 @@ export default function App() {
             <div className="muted">
               {String(paymentInfo?.purpose || 'spin') === 'topup'
                 ? 'Complete payment in Speed. After confirmation, your wallet balance will be updated.'
-                : 'Complete payment in Speed. After confirmation, the reel will spin and winnings (if any) will be paid to your lightning address.'}
+                : 'Complete payment in Speed. After confirmation, the reel will spin and winnings (if any) will be added to your wallet balance.'}
             </div>
 
             {paymentUrl ? (
@@ -1153,8 +1201,94 @@ export default function App() {
               </button>
             </div>
 
+            <div className="legalNote" style={{ marginTop: 12 }}>
+              By depositing money or sats or btc, you have read and agree to our{' '}
+              <button className="legalLink" type="button" onClick={() => openLegal('terms')}>T&amp;C</button>
+              {' '}and{' '}
+              <button className="legalLink" type="button" onClick={() => openLegal('privacy')}>privacy policy</button>.
+            </div>
+
             <div className="muted" style={{ marginTop: 12 }}>
               Unused wallet balance auto-refunds after 30 minutes of inactivity.
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showLegalModal ? (
+        <div className="modalOverlay" role="dialog" aria-modal="true">
+          <div className="modal">
+            <div className="modalHeader">
+              <div className="modalTitle">{legalDoc === 'privacy' ? 'Privacy Policy' : 'Terms & Conditions'}</div>
+              <button
+                className="button secondary"
+                type="button"
+                onClick={() => {
+                  setShowLegalModal(false);
+                  setLegalDoc(null);
+                }}
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="legalBody">
+              {legalDoc === 'privacy' ? (
+                <>
+                  <div className="legalH">1. Overview</div>
+                  <div className="legalP">This Privacy Policy explains what information BTC Slides collects, how it is used, and your choices. This is a draft provided for informational purposes only and may require legal review for your jurisdiction.</div>
+
+                  <div className="legalH">2. What we collect</div>
+                  <div className="legalP">We may collect your lightning address (to bind your game wallet and to process withdrawals/auto-refunds), your wallet ID (a random identifier), gameplay events (e.g., bets/spins and timestamps), and technical logs needed to operate the service.</div>
+
+                  <div className="legalH">3. Payments</div>
+                  <div className="legalP">Deposits and withdrawals are processed through the configured Lightning payment provider. We do not store your private keys. We may store invoice IDs and payment status for reconciliation and anti-fraud.</div>
+
+                  <div className="legalH">4. How we use data</div>
+                  <div className="legalP">We use information to provide the game, maintain wallet balances, prevent abuse, comply with legal obligations, and improve reliability.</div>
+
+                  <div className="legalH">5. Storage & retention</div>
+                  <div className="legalP">Wallet and invoice information may be stored on the server to maintain balances and prevent double-crediting. We retain information as long as needed for operational and legal purposes.</div>
+
+                  <div className="legalH">6. Sharing</div>
+                  <div className="legalP">We share information with payment providers only as necessary to create invoices and send withdrawals/auto-refunds, and with service providers as needed to host and operate the service.</div>
+
+                  <div className="legalH">7. Security</div>
+                  <div className="legalP">We use reasonable safeguards, but no method of transmission or storage is 100% secure. Use the service at your own risk.</div>
+
+                  <div className="legalH">8. Your choices</div>
+                  <div className="legalP">You can withdraw your wallet balance at any time. If you stop playing, the service may auto-refund your remaining balance after a period of inactivity.</div>
+
+                  <div className="legalH">9. Contact</div>
+                  <div className="legalP">For privacy requests, contact the operator of this BTC Slides deployment.</div>
+                </>
+              ) : (
+                <>
+                  <div className="legalH">1. Acceptance</div>
+                  <div className="legalP">By using BTC Slides and/or depositing sats, you agree to these Terms. This is a draft provided for informational purposes only and may require legal review for your jurisdiction.</div>
+
+                  <div className="legalH">2. The game</div>
+                  <div className="legalP">BTC Slides is an entertainment game. Outcomes are determined by configured payout tables/weights and may include promotional or onboarding sequences for new wallets.</div>
+
+                  <div className="legalH">3. Wallet balance</div>
+                  <div className="legalP">Deposits and winnings are credited to an in-game wallet balance. You may request withdrawal to your bound lightning address. The service may auto-refund remaining wallet balance after a period of inactivity.</div>
+
+                  <div className="legalH">4. Withdrawals & auto-refunds</div>
+                  <div className="legalP">Withdrawals are subject to provider availability, network conditions, fees, compliance requirements, and anti-fraud checks. Auto-refunds are best-effort; do not rely on timing guarantees.</div>
+
+                  <div className="legalH">5. No guarantees</div>
+                  <div className="legalP">We do not guarantee uninterrupted service, exact payout timing, or error-free operation. The game may be updated, paused, or discontinued at any time.</div>
+
+                  <div className="legalH">6. Responsible use</div>
+                  <div className="legalP">Do not use the service if prohibited by law in your jurisdiction. You are responsible for taxes, reporting, and compliance related to your use.</div>
+
+                  <div className="legalH">7. Limitation of liability</div>
+                  <div className="legalP">To the maximum extent permitted by law, the operator is not liable for indirect or consequential damages, lost profits, or losses arising from use of the service, including payment-provider failures.</div>
+
+                  <div className="legalH">8. Contact</div>
+                  <div className="legalP">For support, contact the operator of this BTC Slides deployment.</div>
+                </>
+              )}
             </div>
           </div>
         </div>
