@@ -309,11 +309,16 @@ export default function App() {
   const pendingPayoutUpdateRef = useRef(null);
   const pendingWalletBalanceRef = useRef(null);
   const walletBalanceRef = useRef(0);
+  const walletIdRef = useRef(walletId);
   const spinRevealPendingRef = useRef(false);
 
   useEffect(() => {
     walletBalanceRef.current = walletBalance;
   }, [walletBalance]);
+
+  useEffect(() => {
+    walletIdRef.current = walletId;
+  }, [walletId]);
 
   useEffect(() => {
     function syncVhVar() {
@@ -459,8 +464,14 @@ export default function App() {
     };
 
     const onWalletBalance = (data) => {
+      const incomingWalletId = data?.walletId;
+      if (!incomingWalletId || String(incomingWalletId) !== String(walletIdRef.current || '')) {
+        return;
+      }
+
       const b = Number(data?.balanceSats);
-      const next = Number.isFinite(b) ? b : 0;
+      if (!Number.isFinite(b)) return;
+      const next = Math.max(0, Math.floor(b));
 
       if (spinRevealPendingRef.current && next > walletBalanceRef.current) {
         pendingWalletBalanceRef.current = next;
