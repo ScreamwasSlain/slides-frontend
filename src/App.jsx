@@ -205,6 +205,32 @@ export default function App() {
     return 4 * 60 * 1000;
   }, [backendUrl]);
 
+  const historyKey = useMemo(() => {
+    try {
+      let id = localStorage.getItem('slidesWalletId') || '';
+      if (!(id && String(id).trim().length >= 32)) {
+        id = generateWalletId();
+        localStorage.setItem('slidesWalletId', id);
+      }
+      return `slidesHistory:${id}`;
+    } catch {
+      return 'slidesHistory:';
+    }
+  }, []);
+
+  const [history, setHistory] = useState(() => {
+    try {
+      const raw = localStorage.getItem(historyKey);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+
   const [socketConnected, setSocketConnected] = useState(false);
   const [socketId, setSocketId] = useState(null);
 
@@ -342,6 +368,22 @@ export default function App() {
 
     socketRef.current = s;
 
+    const logHistory = (entry) => {
+      const nowIso = new Date().toISOString();
+      const id = `h_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+      const e = { id, ts: nowIso, ...entry };
+
+      setHistory((prev) => {
+        const cur = Array.isArray(prev) ? prev : [];
+        const next = [e, ...cur].slice(0, 200);
+        try {
+          localStorage.setItem(historyKey, JSON.stringify(next));
+        } catch {
+        }
+        return next;
+      });
+    };
+
     const onConnect = () => {
       setSocketConnected(true);
       setSocketId(s.id);
@@ -436,6 +478,7 @@ export default function App() {
         setWalletBalance(b);
       }
       const amt = Number(data?.amountSats) || 0;
+      logHistory({ type: 'deposit', amountSats: amt, balanceSats: Number.isFinite(b) ? b : undefined });
       setStatus(amt > 0 ? `Wallet topped up: +${amt} SATS` : 'Wallet topped up');
       setShowPaymentModal(false);
       setPayButtonLoading(false);
@@ -443,26 +486,31 @@ export default function App() {
 
     const onWithdrawalPending = ({ amountSats }) => {
       const a = Number(amountSats) || 0;
+      logHistory({ type: 'withdraw_pending', amountSats: a });
       setStatus(a > 0 ? `Withdrawing ${a} SATS...` : 'Withdrawing...');
     };
 
     const onWithdrawalSent = ({ amountSats, recipient }) => {
       const a = Number(amountSats) || 0;
+      logHistory({ type: 'withdraw_sent', amountSats: a, recipient });
       setStatus(a > 0 ? `Withdrawn ${a} SATS to ${recipient}` : `Withdrawn to ${recipient}`);
     };
 
     const onWithdrawalFailed = ({ amountSats, error }) => {
       const a = Number(amountSats) || 0;
+      logHistory({ type: 'withdraw_failed', amountSats: a, error });
       setStatus(a > 0 ? `Withdrawal failed for ${a} SATS: ${error}` : `Withdrawal failed: ${error}`);
     };
 
-    const onAutoRefundSent = ({ amountSats }) => {
+    const onAutoRefundSent = ({ amountSats, recipient }) => {
       const a = Number(amountSats) || 0;
+      logHistory({ type: 'auto_refund_sent', amountSats: a, recipient });
       setStatus(a > 0 ? `Auto-refund sent: ${a} SATS` : 'Auto-refund sent');
     };
 
-    const onAutoRefundFailed = ({ amountSats, error }) => {
+    const onAutoRefundFailed = ({ amountSats, error, recipient }) => {
       const a = Number(amountSats) || 0;
+      logHistory({ type: 'auto_refund_failed', amountSats: a, recipient, error });
       setStatus(a > 0 ? `Auto-refund failed for ${a} SATS: ${error}` : `Auto-refund failed: ${error}`);
     };
 
@@ -629,7 +677,7 @@ export default function App() {
     return () => {
       s.disconnect();
     };
-  }, [backendUrl]);
+  }, [backendUrl, historyKey]);
 
   useEffect(() => {
     if (!keepAliveMs) return;
@@ -908,6 +956,34 @@ export default function App() {
     showCopied(ok ? `${label} copied` : 'Copy failed');
   }, [showCopied]);
 
+  const pushHistory = useCallback((entry) => {
+    const nowIso = new Date().toISOString();
+    const id = `h_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const e = {
+      id,
+      ts: nowIso,
+      ...entry
+    };
+
+    setHistory((prev) => {
+      const cur = Array.isArray(prev) ? prev : [];
+      const next = [e, ...cur].slice(0, 200);
+      try {
+        localStorage.setItem(historyKey, JSON.stringify(next));
+      } catch {
+      }
+      return next;
+    });
+  }, [historyKey]);
+
+  const clearHistory = useCallback(() => {
+    setHistory([]);
+    try {
+      localStorage.removeItem(historyKey);
+    } catch {
+    }
+  }, [historyKey]);
+
   const openLegal = useCallback((doc) => {
     setLegalDoc(doc);
     setShowLegalModal(true);
@@ -988,10 +1064,19 @@ export default function App() {
         setStatus(`Result: ${a} SATS`);
       }
 
+      if (pendingOutcome) {
+        const bet = Number(pendingOutcome?.betAmount) || 0;
+        const payout = Number(pendingOutcome?.payoutAmount) || 0;
+        const bal = Number.isFinite(Number(pendingBalance))
+          ? Number(pendingBalance)
+          : Number(pendingPayout?.payoutStatus?.balanceSats);
+        pushHistory({ type: 'spin', betAmount: bet, payoutAmount: payout, balanceSats: Number.isFinite(bal) ? bal : undefined });
+      }
+
       spinRevealPendingRef.current = false;
       setSpinLocked(false);
     }
-  }, [spinAnimating, spinStage]);
+  }, [spinAnimating, spinStage, pushHistory]);
 
   return (
     <div className="shell">
@@ -1060,6 +1145,15 @@ export default function App() {
               style={{ marginTop: 10, width: '100%' }}
             >
               Add Cash
+            </button>
+
+            <button
+              className="button secondary"
+              type="button"
+              onClick={() => setShowHistoryModal(true)}
+              style={{ marginTop: 8, width: '100%' }}
+            >
+              History
             </button>
 
             <div className="muted" style={{ marginTop: 10 }}>
@@ -1214,6 +1308,79 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      {showHistoryModal ? (
+        <div className="modalOverlay" role="dialog" aria-modal="true">
+          <div className="modal">
+            <div className="modalHeader">
+              <div className="modalTitle">History</div>
+              <button className="button secondary" type="button" onClick={() => setShowHistoryModal(false)}>
+                Close
+              </button>
+            </div>
+
+            <div className="muted">
+              Spins, deposits, withdrawals, and auto-refunds for this wallet.
+            </div>
+
+            <div style={{ marginTop: 12, maxHeight: 420, overflow: 'auto' }}>
+              {history && history.length > 0 ? (
+                history.map((h) => {
+                  const ts = h?.ts ? new Date(h.ts).toLocaleString() : '';
+                  const t = String(h?.type || '');
+                  const amt = Number(h?.amountSats);
+                  const bet = Number(h?.betAmount);
+                  const payout = Number(h?.payoutAmount);
+                  const bal = Number(h?.balanceSats);
+
+                  let title = 'Event';
+                  let sub = '';
+
+                  if (t === 'deposit') {
+                    title = Number.isFinite(amt) && amt > 0 ? `Deposit +${amt} SATS` : 'Deposit';
+                    sub = Number.isFinite(bal) ? `Balance: ${bal} SATS` : '';
+                  } else if (t === 'withdraw_pending') {
+                    title = Number.isFinite(amt) && amt > 0 ? `Withdrawal requested ${amt} SATS` : 'Withdrawal requested';
+                  } else if (t === 'withdraw_sent') {
+                    title = Number.isFinite(amt) && amt > 0 ? `Withdrawal sent ${amt} SATS` : 'Withdrawal sent';
+                    sub = h?.recipient ? `To: ${h.recipient}` : '';
+                  } else if (t === 'withdraw_failed') {
+                    title = Number.isFinite(amt) && amt > 0 ? `Withdrawal failed ${amt} SATS` : 'Withdrawal failed';
+                    sub = h?.error ? String(h.error) : '';
+                  } else if (t === 'auto_refund_sent') {
+                    title = Number.isFinite(amt) && amt > 0 ? `Auto-refund sent ${amt} SATS` : 'Auto-refund sent';
+                    sub = h?.recipient ? `To: ${h.recipient}` : '';
+                  } else if (t === 'auto_refund_failed') {
+                    title = Number.isFinite(amt) && amt > 0 ? `Auto-refund failed ${amt} SATS` : 'Auto-refund failed';
+                    sub = h?.error ? String(h.error) : '';
+                  } else if (t === 'spin') {
+                    title = `Spin bet ${Number.isFinite(bet) ? bet : 0} SATS`;
+                    sub = `Payout: ${Number.isFinite(payout) ? payout : 0} SATS${Number.isFinite(bal) ? ` • Balance: ${bal} SATS` : ''}`;
+                  }
+
+                  return (
+                    <div key={String(h?.id || `${t}-${ts}`)} style={{ padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
+                        <b>{title}</b>
+                        <span className="muted" style={{ fontSize: 12 }}>{ts}</span>
+                      </div>
+                      {sub ? <div className="muted" style={{ marginTop: 4 }}>{sub}</div> : null}
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="muted" style={{ marginTop: 12 }}>No history yet.</div>
+              )}
+            </div>
+
+            <div className="actions" style={{ marginTop: 12 }}>
+              <button className="button secondary" type="button" onClick={clearHistory} disabled={!history || history.length === 0}>
+                Clear history
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {showPaymentModal && paymentInfo ? (
         <div className="modalOverlay" role="dialog" aria-modal="true">
@@ -1423,7 +1590,7 @@ export default function App() {
                   <div className="legalP">By accessing or using BTC Slides, and/or by depositing sats (or any other value) into the in-game wallet, you agree to these Terms. If you do not agree, do not use the service.</div>
 
                   <div className="legalH">2. Eligibility and legality</div>
-                  <div className="legalP">You must be legally permitted to use this service in By depositing money or sats or btc, you have read and agree to our T&C and privacy policy.your jurisdiction. You are responsible for determining whether your use is lawful, and for any taxes or reporting obligations.</div>
+                  <div className="legalP">You must be legally permitted to use this service in your jurisdiction. You are responsible for determining whether your use is lawful, and for any taxes or reporting obligations.</div>
 
                   <div className="legalH">3. The game and odds</div>
                   <div className="legalP">BTC Slides is an entertainment game. Outcomes are determined by the server’s configured payout tables/weights and may include promotional or onboarding sequences for new wallets. Displayed odds/payouts are informational and may change.</div>
