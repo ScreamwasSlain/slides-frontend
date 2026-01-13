@@ -157,6 +157,7 @@ function copyToClipboard(text) {
 }
 
 function openPaymentUrlSafely(url) {
+  if (!url) return false;
   try {
     const preWin = window.open('', '_blank', 'noopener,noreferrer');
     if (preWin && typeof preWin.location !== 'undefined') {
@@ -192,6 +193,29 @@ function openPaymentUrlSafely(url) {
   }
 
   return false;
+}
+
+function downloadTextFile(filename, text, mime = 'text/plain') {
+  try {
+    const blob = new Blob([String(text ?? '')], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => {
+      try {
+        URL.revokeObjectURL(url);
+      } catch {
+      }
+    }, 3000);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export default function App() {
@@ -310,6 +334,7 @@ export default function App() {
   const pendingWalletBalanceRef = useRef(null);
   const walletBalanceRef = useRef(0);
   const walletIdRef = useRef(walletId);
+  const lightningAddressRef = useRef(lightningAddress);
   const spinRevealPendingRef = useRef(false);
 
   useEffect(() => {
@@ -319,6 +344,10 @@ export default function App() {
   useEffect(() => {
     walletIdRef.current = walletId;
   }, [walletId]);
+
+  useEffect(() => {
+    lightningAddressRef.current = lightningAddress;
+  }, [lightningAddress]);
 
   useEffect(() => {
     function syncVhVar() {
@@ -376,7 +405,14 @@ export default function App() {
     const logHistory = (entry) => {
       const nowIso = new Date().toISOString();
       const id = `h_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-      const e = { id, ts: nowIso, ...entry };
+      const addr = String(lightningAddressRef.current || '').trim();
+      const e = {
+        id,
+        ts: nowIso,
+        ...entry,
+        walletId: walletIdRef.current,
+        lightningAddress: addr || null
+      };
 
       setHistory((prev) => {
         const cur = Array.isArray(prev) ? prev : [];
@@ -489,27 +525,27 @@ export default function App() {
         setWalletBalance(b);
       }
       const amt = Number(data?.amountSats) || 0;
-      logHistory({ type: 'deposit', amountSats: amt, balanceSats: Number.isFinite(b) ? b : undefined });
+      logHistory({ type: 'deposit', invoiceId: data?.invoiceId, amountSats: amt, balanceSats: Number.isFinite(b) ? b : undefined });
       setStatus(amt > 0 ? `Wallet topped up: +${amt} SATS` : 'Wallet topped up');
       setShowPaymentModal(false);
       setPayButtonLoading(false);
     };
 
-    const onWithdrawalPending = ({ amountSats }) => {
+    const onWithdrawalPending = ({ amountSats, recipient, balanceSats }) => {
       const a = Number(amountSats) || 0;
-      logHistory({ type: 'withdraw_pending', amountSats: a });
+      logHistory({ type: 'withdraw_pending', amountSats: a, recipient, balanceSats });
       setStatus(a > 0 ? `Withdrawing ${a} SATS...` : 'Withdrawing...');
     };
 
-    const onWithdrawalSent = ({ amountSats, recipient }) => {
+    const onWithdrawalSent = ({ amountSats, recipient, balanceSats }) => {
       const a = Number(amountSats) || 0;
-      logHistory({ type: 'withdraw_sent', amountSats: a, recipient });
+      logHistory({ type: 'withdraw_sent', amountSats: a, recipient, balanceSats });
       setStatus(a > 0 ? `Withdrawn ${a} SATS to ${recipient}` : `Withdrawn to ${recipient}`);
     };
 
-    const onWithdrawalFailed = ({ amountSats, error }) => {
+    const onWithdrawalFailed = ({ amountSats, error, recipient, balanceSats }) => {
       const a = Number(amountSats) || 0;
-      logHistory({ type: 'withdraw_failed', amountSats: a, error });
+      logHistory({ type: 'withdraw_failed', amountSats: a, recipient, balanceSats, error });
       setStatus(a > 0 ? `Withdrawal failed for ${a} SATS: ${error}` : `Withdrawal failed: ${error}`);
     };
 
@@ -970,10 +1006,13 @@ export default function App() {
   const pushHistory = useCallback((entry) => {
     const nowIso = new Date().toISOString();
     const id = `h_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const addr = String(lightningAddressRef.current || '').trim();
     const e = {
       id,
       ts: nowIso,
-      ...entry
+      ...entry,
+      walletId,
+      lightningAddress: addr || null
     };
 
     setHistory((prev) => {
@@ -994,6 +1033,69 @@ export default function App() {
     } catch {
     }
   }, [historyKey]);
+
+  const exportHistoryJson = useCallback(() => {
+    const exportedAt = new Date().toISOString();
+    const addr = String(lightningAddressRef.current || '').trim();
+    const rows = Array.isArray(history) ? history : [];
+    const payload = {
+      exportedAt,
+      walletId,
+      lightningAddress: addr || null,
+      backendUrl,
+      entries: rows.map((h) => ({
+        ...h,
+        walletId: h?.walletId || walletId,
+        lightningAddress: h?.lightningAddress || (addr || null)
+      }))
+    };
+    const name = `btc-slides-history_${walletId}_${exportedAt.slice(0, 10)}.json`;
+    downloadTextFile(name, JSON.stringify(payload, null, 2), 'application/json');
+  }, [backendUrl, history, walletId]);
+
+  const exportHistoryCsv = useCallback(() => {
+    const rows = Array.isArray(history) ? history : [];
+    const addr = String(lightningAddressRef.current || '').trim();
+    const header = [
+      'ts',
+      'type',
+      'walletId',
+      'lightningAddress',
+      'betAmount',
+      'payoutAmount',
+      'amountSats',
+      'balanceSats',
+      'recipient',
+      'invoiceId',
+      'error'
+    ];
+
+    const esc = (v) => {
+      const s = String(v ?? '');
+      return `"${s.replace(/"/g, '""')}"`;
+    };
+
+    const lines = [header.join(',')];
+    for (const h of rows) {
+      lines.push([
+        esc(h?.ts),
+        esc(h?.type),
+        esc(h?.walletId || walletId),
+        esc(h?.lightningAddress || (addr || null)),
+        esc(h?.betAmount),
+        esc(h?.payoutAmount),
+        esc(h?.amountSats),
+        esc(h?.balanceSats),
+        esc(h?.recipient),
+        esc(h?.invoiceId),
+        esc(h?.error)
+      ].join(','));
+    }
+
+    const exportedAt = new Date().toISOString();
+    const name = `btc-slides-history_${walletId}_${exportedAt.slice(0, 10)}.csv`;
+    downloadTextFile(name, `${lines.join('\n')}\n`, 'text/csv');
+  }, [history, walletId]);
 
   const openLegal = useCallback((doc) => {
     setLegalDoc(doc);
@@ -1385,6 +1487,12 @@ export default function App() {
             </div>
 
             <div className="actions" style={{ marginTop: 12 }}>
+              <button className="button secondary" type="button" onClick={exportHistoryJson} disabled={!history || history.length === 0}>
+                Export JSON
+              </button>
+              <button className="button secondary" type="button" onClick={exportHistoryCsv} disabled={!history || history.length === 0}>
+                Export CSV
+              </button>
               <button className="button secondary" type="button" onClick={clearHistory} disabled={!history || history.length === 0}>
                 Clear history
               </button>
