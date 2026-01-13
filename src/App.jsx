@@ -196,6 +196,14 @@ function openPaymentUrlSafely(url) {
 
 export default function App() {
   const backendUrl = import.meta.env.VITE_BACKEND_URL || DEFAULT_BACKEND_URL;
+  const keepAliveMs = useMemo(() => {
+    const raw = import.meta.env.VITE_KEEPALIVE_MS;
+    const n = raw == null ? NaN : Number(raw);
+    if (Number.isFinite(n) && n >= 0) return n;
+    const u = String(backendUrl || '').toLowerCase();
+    if (u.includes('localhost') || u.includes('127.0.0.1')) return 0;
+    return 4 * 60 * 1000;
+  }, [backendUrl]);
 
   const [socketConnected, setSocketConnected] = useState(false);
   const [socketId, setSocketId] = useState(null);
@@ -246,6 +254,7 @@ export default function App() {
   const [spinFlash, setSpinFlash] = useState(false);
   const [winnerIndex, setWinnerIndex] = useState(null);
   const [rarityByValue, setRarityByValue] = useState({});
+  const [spinLocked, setSpinLocked] = useState(false);
 
   const [copyNotice, setCopyNotice] = useState(null);
 
@@ -270,6 +279,15 @@ export default function App() {
   const spinTargetShiftRef = useRef(0);
   const flashTimeoutRef = useRef(null);
   const copyTimeoutRef = useRef(null);
+  const pendingOutcomeRef = useRef(null);
+  const pendingPayoutUpdateRef = useRef(null);
+  const pendingWalletBalanceRef = useRef(null);
+  const walletBalanceRef = useRef(0);
+  const spinRevealPendingRef = useRef(false);
+
+  useEffect(() => {
+    walletBalanceRef.current = walletBalance;
+  }, [walletBalance]);
 
   useEffect(() => {
     function syncVhVar() {
@@ -313,7 +331,13 @@ export default function App() {
   useEffect(() => {
     const s = io(backendUrl, {
       transports: ['websocket', 'polling'],
-      withCredentials: true
+      withCredentials: true,
+      timeout: 10000,
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 600,
+      reconnectionDelayMax: 6000,
+      randomizationFactor: 0.2
     });
 
     socketRef.current = s;
@@ -328,6 +352,30 @@ export default function App() {
       setSocketConnected(false);
       setStatus('Disconnected from server');
       setPayButtonLoading(false);
+      setSpinLocked(false);
+      spinRevealPendingRef.current = false;
+      pendingOutcomeRef.current = null;
+      pendingPayoutUpdateRef.current = null;
+      pendingWalletBalanceRef.current = null;
+    };
+
+    const onConnectError = (err) => {
+      const msg = String(err?.message || err || 'Connection error');
+      setSocketConnected(false);
+      setStatus(`Connection issue: ${msg}`);
+      setSpinLocked(false);
+      spinRevealPendingRef.current = false;
+      pendingOutcomeRef.current = null;
+      pendingPayoutUpdateRef.current = null;
+      pendingWalletBalanceRef.current = null;
+    };
+
+    const onReconnectAttempt = () => {
+      setStatus('Reconnecting...');
+    };
+
+    const onReconnect = () => {
+      setStatus('');
     };
 
     const onServerInfo = (info) => {
@@ -370,12 +418,23 @@ export default function App() {
 
     const onWalletBalance = (data) => {
       const b = Number(data?.balanceSats);
-      setWalletBalance(Number.isFinite(b) ? b : 0);
+      const next = Number.isFinite(b) ? b : 0;
+
+      if (spinRevealPendingRef.current && next > walletBalanceRef.current) {
+        pendingWalletBalanceRef.current = next;
+        return;
+      }
+
+      walletBalanceRef.current = next;
+      setWalletBalance(next);
     };
 
     const onTopUpConfirmed = (data) => {
       const b = Number(data?.balanceSats);
-      if (Number.isFinite(b)) setWalletBalance(b);
+      if (Number.isFinite(b)) {
+        walletBalanceRef.current = b;
+        setWalletBalance(b);
+      }
       const amt = Number(data?.amountSats) || 0;
       setStatus(amt > 0 ? `Wallet topped up: +${amt} SATS` : 'Wallet topped up');
       setShowPaymentModal(false);
@@ -409,8 +468,8 @@ export default function App() {
 
     const onSpinOutcome = ({ betAmount: bet, payoutAmount, payoutOptions, payoutWeights }) => {
       setShowPaymentModal(false);
-      setLastOutcome({ betAmount: bet, payoutAmount, payoutOptions });
-      setStatus(`Result: ${payoutAmount} SATS`);
+      pendingOutcomeRef.current = { betAmount: bet, payoutAmount, payoutOptions };
+      spinRevealPendingRef.current = true;
 
       const opts = Array.isArray(payoutOptions) && payoutOptions.length > 0 ? payoutOptions : [0, bet];
       const weights = Array.isArray(payoutWeights) && payoutWeights.length === opts.length ? payoutWeights : null;
@@ -429,7 +488,7 @@ export default function App() {
         return opts[opts.length - 1];
       }
 
-      const fillerCount = 46;
+      const fillerCount = 60;
       const tailCount = 14;
       const totalCount = fillerCount + 1 + tailCount;
 
@@ -450,7 +509,7 @@ export default function App() {
       const targetCenter = targetIndex * itemW + itemW / 2;
       const shift = Math.max(0, targetCenter - pointerX);
 
-      const overshoot = Math.min(42, Math.max(18, Math.round(itemW * 0.18)));
+      const overshoot = Math.min(28, Math.max(10, Math.round(itemW * 0.12)));
       spinTargetShiftRef.current = shift;
 
       const firstStageShift = Math.max(0, shift - overshoot);
@@ -468,7 +527,7 @@ export default function App() {
           } catch {
           }
           setSpinAnimating(true);
-          setSpinTransitionMs(5600);
+          setSpinTransitionMs(8200);
           setSpinStage(1);
           setSpinShift(firstStageShift);
         });
@@ -478,26 +537,37 @@ export default function App() {
     const onPayoutSent = ({ payoutAmount, recipient, creditedToWallet, balanceSats }) => {
       const a = Number(payoutAmount) || 0;
       const credited = Boolean(creditedToWallet) || String(recipient || '') === 'wallet';
-      setPayoutStatus({ ok: true, payoutAmount: a, recipient: credited ? 'wallet' : recipient, creditedToWallet: credited, balanceSats });
+      const payoutObj = { ok: true, payoutAmount: a, recipient: credited ? 'wallet' : recipient, creditedToWallet: credited, balanceSats };
+      const statusText = a <= 0
+        ? 'No win this spin (0 SATS)'
+        : (credited
+          ? (() => {
+            const b = Number(balanceSats);
+            return Number.isFinite(b) ? `Won ${a} SATS (added to wallet, balance ${b})` : `Won ${a} SATS (added to wallet)`;
+          })()
+          : `Paid ${a} SATS to ${recipient}`);
 
-      if (a <= 0) {
-        setStatus('No win this spin (0 SATS)');
+      if (spinRevealPendingRef.current || spinAnimating || spinStage !== 0) {
+        pendingPayoutUpdateRef.current = { payoutStatus: payoutObj, statusText };
         return;
       }
 
-      if (credited) {
-        const b = Number(balanceSats);
-        setStatus(Number.isFinite(b) ? `Won ${a} SATS (added to wallet, balance ${b})` : `Won ${a} SATS (added to wallet)`);
-        return;
-      }
-
-      setStatus(`Paid ${a} SATS to ${recipient}`);
+      setPayoutStatus(payoutObj);
+      setStatus(statusText);
     };
 
     const onPayoutFailed = ({ payoutAmount, recipient, error }) => {
       const a = Number(payoutAmount) || 0;
-      setPayoutStatus({ ok: false, payoutAmount: a, recipient, error });
-      setStatus(`Payout failed: ${error}`);
+      const payoutObj = { ok: false, payoutAmount: a, recipient, error };
+      const statusText = `Payout failed: ${error}`;
+
+      if (spinRevealPendingRef.current || spinAnimating || spinStage !== 0) {
+        pendingPayoutUpdateRef.current = { payoutStatus: payoutObj, statusText };
+        return;
+      }
+
+      setPayoutStatus(payoutObj);
+      setStatus(statusText);
     };
 
     const onPaymentFailed = () => {
@@ -505,6 +575,11 @@ export default function App() {
       setPayButtonLoading(false);
       setShowPaymentModal(false);
       setPaymentInfo(null);
+      setSpinLocked(false);
+      spinRevealPendingRef.current = false;
+      pendingOutcomeRef.current = null;
+      pendingPayoutUpdateRef.current = null;
+      pendingWalletBalanceRef.current = null;
     };
 
     const onPaymentExpired = () => {
@@ -512,15 +587,28 @@ export default function App() {
       setPayButtonLoading(false);
       setShowPaymentModal(false);
       setPaymentInfo(null);
+      setSpinLocked(false);
+      spinRevealPendingRef.current = false;
+      pendingOutcomeRef.current = null;
+      pendingPayoutUpdateRef.current = null;
+      pendingWalletBalanceRef.current = null;
     };
 
     const onErrorMessage = (msg) => {
       setStatus(msg?.message || 'Error');
       setPayButtonLoading(false);
+      setSpinLocked(false);
+      spinRevealPendingRef.current = false;
+      pendingOutcomeRef.current = null;
+      pendingPayoutUpdateRef.current = null;
+      pendingWalletBalanceRef.current = null;
     };
 
     s.on('connect', onConnect);
     s.on('disconnect', onDisconnect);
+    s.on('connect_error', onConnectError);
+    s.io.on('reconnect_attempt', onReconnectAttempt);
+    s.io.on('reconnect', onReconnect);
     s.on('serverInfo', onServerInfo);
     s.on('paymentRequest', onPaymentRequest);
     s.on('paymentVerified', onPaymentVerified);
@@ -542,6 +630,27 @@ export default function App() {
       s.disconnect();
     };
   }, [backendUrl]);
+
+  useEffect(() => {
+    if (!keepAliveMs) return;
+    const base = String(backendUrl || '').replace(/\/$/, '');
+    if (!base) return;
+    const url = `${base}/health`;
+
+    let stopped = false;
+
+    const ping = () => {
+      if (stopped) return;
+      fetch(url, { method: 'GET', cache: 'no-store' }).catch(() => {});
+    };
+
+    ping();
+    const t = setInterval(ping, keepAliveMs);
+    return () => {
+      stopped = true;
+      clearInterval(t);
+    };
+  }, [backendUrl, keepAliveMs]);
 
   useEffect(() => {
     const s = socketRef.current;
@@ -720,6 +829,7 @@ export default function App() {
   const startSpin = useCallback(() => {
     const s = socketRef.current;
     if (!s) return;
+    if (spinLocked) return;
 
     const addr = lightningAddress.trim();
     if (!addr) {
@@ -742,9 +852,14 @@ export default function App() {
     setPayoutStatus(null);
     setLastOutcome(null);
     setWinnerIndex(null);
+    pendingOutcomeRef.current = null;
+    pendingPayoutUpdateRef.current = null;
+    pendingWalletBalanceRef.current = null;
+    spinRevealPendingRef.current = true;
+    setSpinLocked(true);
 
     s.emit('startSpin', { walletId, walletSecret, lightningAddress: addr, betAmount: bet });
-  }, [walletId, walletSecret, lightningAddress, betAmount, walletBalance]);
+  }, [walletId, walletSecret, lightningAddress, betAmount, walletBalance, spinLocked]);
 
   const withdrawWallet = useCallback(() => {
     const s = socketRef.current;
@@ -800,8 +915,8 @@ export default function App() {
 
   const trackStyle = useMemo(() => {
     const easing = spinStage === 2
-      ? 'cubic-bezier(0.18, 0.90, 0.25, 1.15)'
-      : 'cubic-bezier(0.08, 0.85, 0.14, 1.00)';
+      ? 'cubic-bezier(0.16, 0.90, 0.22, 1.00)'
+      : 'cubic-bezier(0.08, 0.88, 0.16, 1.00)';
     return {
       transform: `translate3d(${-spinShift}px, 0, 0)`,
       transition: spinAnimating ? `transform ${spinTransitionMs}ms ${easing}` : 'none'
@@ -837,7 +952,7 @@ export default function App() {
 
     if (spinStage === 1) {
       setSpinStage(2);
-      setSpinTransitionMs(900);
+      setSpinTransitionMs(1400);
       setSpinShift(spinTargetShiftRef.current);
       return;
     }
@@ -849,6 +964,32 @@ export default function App() {
       setSpinFlash(true);
       if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current);
       flashTimeoutRef.current = setTimeout(() => setSpinFlash(false), 700);
+
+      const pendingBalance = pendingWalletBalanceRef.current;
+      if (Number.isFinite(Number(pendingBalance))) {
+        pendingWalletBalanceRef.current = null;
+        walletBalanceRef.current = Number(pendingBalance);
+        setWalletBalance(Number(pendingBalance));
+      }
+
+      const pendingOutcome = pendingOutcomeRef.current;
+      if (pendingOutcome) {
+        pendingOutcomeRef.current = null;
+        setLastOutcome(pendingOutcome);
+      }
+
+      const pendingPayout = pendingPayoutUpdateRef.current;
+      if (pendingPayout) {
+        pendingPayoutUpdateRef.current = null;
+        setPayoutStatus(pendingPayout.payoutStatus);
+        setStatus(pendingPayout.statusText);
+      } else if (pendingOutcome) {
+        const a = Number(pendingOutcome?.payoutAmount) || 0;
+        setStatus(`Result: ${a} SATS`);
+      }
+
+      spinRevealPendingRef.current = false;
+      setSpinLocked(false);
     }
   }, [spinAnimating, spinStage]);
 
@@ -942,7 +1083,7 @@ export default function App() {
             </div>
           </div>
 
-          <button className="primary" disabled={!canStart || !canAfford} onClick={startSpin}>
+          <button className="primary" disabled={!canStart || !canAfford || spinLocked} onClick={startSpin}>
             Spin
           </button>
 
@@ -1202,10 +1343,10 @@ export default function App() {
             </div>
 
             <div className="legalNote" style={{ marginTop: 12 }}>
-              By depositing money or sats or btc, you have read and agree to our{' '}
-              <button className="legalLink" type="button" onClick={() => openLegal('terms')}>T&amp;C</button>
+              By adding funds, you confirm that you have read and agree to our{' '}
+              <button className="legalLink" type="button" onClick={() => openLegal('terms')}>Terms &amp; Conditions</button>
               {' '}and{' '}
-              <button className="legalLink" type="button" onClick={() => openLegal('privacy')}>privacy policy</button>.
+              <button className="legalLink" type="button" onClick={() => openLegal('privacy')}>Privacy Policy</button>.
             </div>
 
             <div className="muted" style={{ marginTop: 12 }}>
@@ -1235,7 +1376,7 @@ export default function App() {
             <div className="legalBody">
               {legalDoc === 'privacy' ? (
                 <>
-                  <div className="legalP"><b>Effective date:</b> {new Date().toISOString().slice(0, 10)}. <b>Operator:</b> [YOUR LEGAL NAME / COMPANY]. <b>Contact:</b> [YOUR SUPPORT EMAIL].</div>
+                  <div className="legalP"><b>Effective date:</b> {new Date().toISOString().slice(0, 10)}. <b>Operator:</b> [HyPolar]. <b>Contact:</b> [slatexsense@gmail.com].</div>
 
                   <div className="legalH">1. Overview</div>
                   <div className="legalP">This Privacy Policy describes how the operator of this BTC Slides deployment (“we”, “us”) collects, uses, and shares information when you use the game. If your local law requires additional disclosures (e.g., GDPR/CCPA), you may need to supplement this policy.</div>
@@ -1276,13 +1417,13 @@ export default function App() {
                 </>
               ) : (
                 <>
-                  <div className="legalP"><b>Effective date:</b> {new Date().toISOString().slice(0, 10)}. <b>Operator:</b> [YOUR LEGAL NAME / COMPANY]. <b>Contact:</b> [YOUR SUPPORT EMAIL].</div>
+                  <div className="legalP"><b>Effective date:</b> {new Date().toISOString().slice(0, 10)}. <b>Operator:</b> [HyPolar]. <b>Contact:</b> [slatexsense@gmail.com].</div>
 
                   <div className="legalH">1. Acceptance</div>
                   <div className="legalP">By accessing or using BTC Slides, and/or by depositing sats (or any other value) into the in-game wallet, you agree to these Terms. If you do not agree, do not use the service.</div>
 
                   <div className="legalH">2. Eligibility and legality</div>
-                  <div className="legalP">You must be legally permitted to use this service in your jurisdiction. You are responsible for determining whether your use is lawful, and for any taxes or reporting obligations.</div>
+                  <div className="legalP">You must be legally permitted to use this service in By depositing money or sats or btc, you have read and agree to our T&C and privacy policy.your jurisdiction. You are responsible for determining whether your use is lawful, and for any taxes or reporting obligations.</div>
 
                   <div className="legalH">3. The game and odds</div>
                   <div className="legalP">BTC Slides is an entertainment game. Outcomes are determined by the server’s configured payout tables/weights and may include promotional or onboarding sequences for new wallets. Displayed odds/payouts are informational and may change.</div>
@@ -1307,7 +1448,7 @@ export default function App() {
                   <div className="legalP">You agree to indemnify and hold us harmless from claims, damages, liabilities, and expenses arising from your use of the service, your violation of these Terms, or your violation of any law or rights of a third party.</div>
 
                   <div className="legalH">9. Disputes; governing law; venue</div>
-                  <div className="legalP">Governing law and venue depend on the operator’s jurisdiction: [INSERT GOVERNING LAW / COUNTRY/STATE]. If your jurisdiction restricts certain dispute terms (e.g., arbitration/class-action waivers), those restrictions apply.</div>
+                  <div className="legalP">Governing law and venue depend on the operator’s jurisdiction: . If your jurisdiction restricts certain dispute terms (e.g., arbitration/class-action waivers), those restrictions apply.</div>
 
                   <div className="legalH">10. Termination</div>
                   <div className="legalP">We may suspend or terminate access to the service at any time. You remain responsible for any activity conducted via your wallet credentials.</div>
