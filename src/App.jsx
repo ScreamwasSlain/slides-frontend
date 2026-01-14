@@ -257,6 +257,7 @@ export default function App() {
 
   const [socketConnected, setSocketConnected] = useState(false);
   const [socketId, setSocketId] = useState(null);
+  const [healthOk, setHealthOk] = useState(null);
 
   const [walletId] = useState(() => {
     const existing = localStorage.getItem('slidesWalletId');
@@ -433,7 +434,7 @@ export default function App() {
 
     const onDisconnect = () => {
       setSocketConnected(false);
-      setStatus('Disconnected from server');
+      setStatus('Disconnected. Reconnecting...');
       setPayButtonLoading(false);
       setSpinLocked(false);
       spinRevealPendingRef.current = false;
@@ -445,7 +446,7 @@ export default function App() {
     const onConnectError = (err) => {
       const msg = String(err?.message || err || 'Connection error');
       setSocketConnected(false);
-      setStatus(`Connection issue: ${msg}`);
+      setStatus(`Connection issue (retrying): ${msg}`);
       setSpinLocked(false);
       spinRevealPendingRef.current = false;
       pendingOutcomeRef.current = null;
@@ -727,7 +728,7 @@ export default function App() {
   }, [backendUrl, historyKey]);
 
   useEffect(() => {
-    if (!keepAliveMs) return;
+    if (keepAliveMs === 0) return;
     const base = String(backendUrl || '').replace(/\/$/, '');
     if (!base) return;
     const url = `${base}/health`;
@@ -736,16 +737,25 @@ export default function App() {
 
     const ping = () => {
       if (stopped) return;
-      fetch(url, { method: 'GET', cache: 'no-store' }).catch(() => {});
+      fetch(url, { method: 'GET', cache: 'no-store' })
+        .then((r) => {
+          if (stopped) return;
+          setHealthOk(Boolean(r && r.ok));
+        })
+        .catch(() => {
+          if (stopped) return;
+          setHealthOk(false);
+        });
     };
 
+    const intervalMs = socketConnected ? keepAliveMs : Math.min(10000, Math.max(2500, keepAliveMs || 10000));
     ping();
-    const t = setInterval(ping, keepAliveMs);
+    const t = setInterval(ping, intervalMs);
     return () => {
       stopped = true;
       clearInterval(t);
     };
-  }, [backendUrl, keepAliveMs]);
+  }, [backendUrl, keepAliveMs, socketConnected]);
 
   useEffect(() => {
     const s = socketRef.current;
@@ -1239,7 +1249,11 @@ export default function App() {
             </button>
           )}
         </div>
-        <div className={`conn ${socketConnected ? 'ok' : 'bad'}`}>{socketConnected ? `Connected (${socketId?.slice(0, 6)})` : 'Offline'}</div>
+        <div className={`conn ${socketConnected ? 'ok' : 'bad'}`}>
+          {socketConnected
+            ? `Connected (${socketId?.slice(0, 6)})`
+            : (healthOk === false ? 'Waking server...' : 'Connecting...')}
+        </div>
       </div>
 
       <div className="layout">
