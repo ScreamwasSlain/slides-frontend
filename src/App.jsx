@@ -221,6 +221,11 @@ function normalizeLightningAddress(input) {
 
 function readLightningAddressFromSearchParams(params) {
   if (!params || typeof params.get !== 'function') return '';
+  const pAddRaw = normalizeLightningAddress(params.get('p_add'));
+  if (pAddRaw) {
+    return pAddRaw.includes('@') ? pAddRaw.split('@')[0] : pAddRaw;
+  }
+
   const keys = [
     'lightningAddress',
     'lightning_address',
@@ -232,24 +237,22 @@ function readLightningAddressFromSearchParams(params) {
   ];
   for (const k of keys) {
     const v = normalizeLightningAddress(params.get(k));
-    if (v && v.includes('@')) return v;
+    if (v) return v;
   }
   return '';
 }
 
 function readLightningAddressFromLocation() {
   try {
+    const hash = String(window.location.hash || '');
+    const hashBody = hash.startsWith('#') ? hash.slice(1) : hash;
+    const hashParams = new URLSearchParams(hashBody);
+    const fromHash = readLightningAddressFromSearchParams(hashParams);
+    if (fromHash) return fromHash;
+
     const search = new URLSearchParams(window.location.search || '');
     const fromSearch = readLightningAddressFromSearchParams(search);
     if (fromSearch) return fromSearch;
-
-    const hash = String(window.location.hash || '');
-    const q = hash.includes('?') ? hash.split('?').slice(1).join('?') : '';
-    if (q) {
-      const hp = new URLSearchParams(q);
-      const fromHash = readLightningAddressFromSearchParams(hp);
-      if (fromHash) return fromHash;
-    }
   } catch {
   }
   return '';
