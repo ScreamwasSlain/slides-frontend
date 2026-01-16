@@ -159,8 +159,12 @@ function copyToClipboard(text) {
 function openPaymentUrlSafely(url) {
   if (!url) return false;
   try {
-    const preWin = window.open('', '_blank', 'noopener,noreferrer');
+    const preWin = window.open('about:blank', '_blank');
     if (preWin && typeof preWin.location !== 'undefined') {
+      try {
+        preWin.opener = null;
+      } catch {
+      }
       preWin.location.href = url;
       return true;
     }
@@ -193,6 +197,62 @@ function openPaymentUrlSafely(url) {
   }
 
   return false;
+}
+
+function preopenPaymentWindow() {
+  try {
+    const w = window.open('about:blank', '_blank');
+    if (w) {
+      try {
+        w.opener = null;
+      } catch {
+      }
+    }
+    return w;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeLightningAddress(input) {
+  const s = String(input || '').trim().toLowerCase();
+  return s;
+}
+
+function readLightningAddressFromSearchParams(params) {
+  if (!params || typeof params.get !== 'function') return '';
+  const keys = [
+    'lightningAddress',
+    'lightning_address',
+    'lnAddress',
+    'ln_address',
+    'speedLightningAddress',
+    'speed_lightning_address',
+    'address'
+  ];
+  for (const k of keys) {
+    const v = normalizeLightningAddress(params.get(k));
+    if (v && v.includes('@')) return v;
+  }
+  return '';
+}
+
+function readLightningAddressFromLocation() {
+  try {
+    const search = new URLSearchParams(window.location.search || '');
+    const fromSearch = readLightningAddressFromSearchParams(search);
+    if (fromSearch) return fromSearch;
+
+    const hash = String(window.location.hash || '');
+    const q = hash.includes('?') ? hash.split('?').slice(1).join('?') : '';
+    if (q) {
+      const hp = new URLSearchParams(q);
+      const fromHash = readLightningAddressFromSearchParams(hp);
+      if (fromHash) return fromHash;
+    }
+  } catch {
+  }
+  return '';
 }
 
 function downloadTextFile(filename, text, mime = 'text/plain') {
@@ -276,6 +336,7 @@ export default function App() {
   });
 
   const [lightningAddress, setLightningAddress] = useState(() => localStorage.getItem('slidesLightningAddress') || '');
+  const [lightningAddressLocked, setLightningAddressLocked] = useState(false);
   const [betAmount, setBetAmount] = useState(() => localStorage.getItem('slidesBetAmount') || '20');
 
   const [betOptions, setBetOptions] = useState([20, 100, 300, 500, 1000, 5000, 10000]);
@@ -330,6 +391,8 @@ export default function App() {
   const spinTargetShiftRef = useRef(0);
   const flashTimeoutRef = useRef(null);
   const copyTimeoutRef = useRef(null);
+  const paymentWindowRef = useRef(null);
+  const pendingAutoSpinBetRef = useRef(null);
   const pendingOutcomeRef = useRef(null);
   const pendingPayoutUpdateRef = useRef(null);
   const pendingWalletBalanceRef = useRef(null);
@@ -349,6 +412,64 @@ export default function App() {
   useEffect(() => {
     lightningAddressRef.current = lightningAddress;
   }, [lightningAddress]);
+
+  useEffect(() => {
+    const forced = String(import.meta.env.VITE_LOCK_LN_ADDRESS || '') === '1';
+    const detected = readLightningAddressFromLocation();
+
+    if (detected) {
+      setLightningAddress(detected);
+      setLightningAddressLocked(true);
+      setEditingAddr(false);
+    } else if (forced) {
+      setLightningAddressLocked(true);
+      setEditingAddr(false);
+    }
+
+    const onMessage = (event) => {
+      try {
+        const origin = String(event?.origin || '');
+        const okOrigin = !origin || origin.includes('tryspeed.com') || origin.includes('speed');
+        if (!okOrigin) return;
+
+        const data = event?.data;
+        if (!data || typeof data !== 'object') return;
+
+        const maybe =
+          data.lightningAddress ||
+          data.lightning_address ||
+          data.lnAddress ||
+          data.ln_address ||
+          data.speedLightningAddress ||
+          data.speed_lightning_address ||
+          data.address ||
+          null;
+
+        const addr = normalizeLightningAddress(maybe);
+        if (!addr || !addr.includes('@')) return;
+
+        setLightningAddress(addr);
+        setLightningAddressLocked(true);
+        setEditingAddr(false);
+      } catch {
+      }
+    };
+
+    try {
+      window.addEventListener('message', onMessage);
+      if (!detected) {
+        window.parent?.postMessage({ type: 'btc_slides_request_ln_address' }, '*');
+      }
+    } catch {
+    }
+
+    return () => {
+      try {
+        window.removeEventListener('message', onMessage);
+      } catch {
+      }
+    };
+  }, []);
 
   useEffect(() => {
     function syncVhVar() {
@@ -490,6 +611,25 @@ export default function App() {
       setWinnerIndex(null);
       const purpose = String(data?.purpose || 'spin');
       setStatus(purpose === 'topup' ? `Pay ${data.amountSats} SATS to add to wallet` : `Pay ${data.amountSats} SATS to spin`);
+
+      const url = data?.speedInterfaceUrl || data?.hostedInvoiceUrl || null;
+      if (url) {
+        let navigated = false;
+        const w = paymentWindowRef.current;
+        if (w && !w.closed) {
+          try {
+            w.location.href = url;
+            navigated = true;
+          } catch {
+          }
+        }
+        if (!navigated) {
+          navigated = openPaymentUrlSafely(url);
+        }
+        if (navigated) {
+          setPayButtonLoading(true);
+        }
+      }
     };
 
     const onPaymentVerified = () => {
@@ -924,6 +1064,13 @@ export default function App() {
     const a = Number(amount);
     if (!Number.isFinite(a)) return;
 
+    try {
+      if (!paymentWindowRef.current || paymentWindowRef.current.closed) {
+        paymentWindowRef.current = preopenPaymentWindow();
+      }
+    } catch {
+    }
+
     setStatus('Creating top up invoice...');
     setShowPaymentModal(false);
     setPaymentVerified(false);
@@ -935,6 +1082,7 @@ export default function App() {
     const s = socketRef.current;
     if (!s) return;
     if (spinLocked || spinRevealPendingRef.current) return;
+    if (pendingAutoSpinBetRef.current) return;
 
     const addr = lightningAddress.trim();
     if (!addr) {
@@ -949,7 +1097,28 @@ export default function App() {
     }
 
     if (walletBalance < bet) {
-      setStatus(`Insufficient wallet balance. Add ${bet - walletBalance} SATS`);
+      const need = bet - walletBalance;
+      const opts = Array.isArray(topUpOptions) ? topUpOptions.map((v) => Number(v)).filter((v) => Number.isFinite(v) && v > 0).sort((a, b) => a - b) : [];
+      const pick = opts.find((v) => v >= need) || opts[opts.length - 1];
+      if (!Number.isFinite(pick)) {
+        setStatus(`Insufficient wallet balance. Add ${need} SATS`);
+        return;
+      }
+
+      pendingAutoSpinBetRef.current = bet;
+
+      try {
+        if (!paymentWindowRef.current || paymentWindowRef.current.closed) {
+          paymentWindowRef.current = preopenPaymentWindow();
+        }
+      } catch {
+      }
+
+      setStatus(`Insufficient balance. Opening top up for ${pick} SATS...`);
+      setShowPaymentModal(false);
+      setPaymentVerified(false);
+      setPayButtonLoading(false);
+      s.emit('startTopUp', { walletId, walletSecret, lightningAddress: addr, amountSats: pick });
       return;
     }
 
@@ -964,7 +1133,35 @@ export default function App() {
     setSpinLocked(true);
 
     s.emit('startSpin', { walletId, walletSecret, lightningAddress: addr, betAmount: bet });
-  }, [walletId, walletSecret, lightningAddress, betAmount, walletBalance, spinLocked]);
+  }, [walletId, walletSecret, lightningAddress, betAmount, walletBalance, spinLocked, topUpOptions]);
+
+  useEffect(() => {
+    const pendingBet = Number(pendingAutoSpinBetRef.current);
+    if (!Number.isFinite(pendingBet) || pendingBet <= 0) return;
+    if (!socketConnected) return;
+    if (spinLocked || spinRevealPendingRef.current) return;
+    if (walletBalance < pendingBet) return;
+
+    pendingAutoSpinBetRef.current = null;
+
+    const s = socketRef.current;
+    if (!s) return;
+
+    const addr = lightningAddress.trim();
+    if (!addr) return;
+
+    setStatus('Spinning...');
+    setPayoutStatus(null);
+    setLastOutcome(null);
+    setWinnerIndex(null);
+    pendingOutcomeRef.current = null;
+    pendingPayoutUpdateRef.current = null;
+    pendingWalletBalanceRef.current = null;
+    spinRevealPendingRef.current = true;
+    setSpinLocked(true);
+
+    s.emit('startSpin', { walletId, walletSecret, lightningAddress: addr, betAmount: pendingBet });
+  }, [walletBalance, socketConnected, spinLocked, lightningAddress, walletId, walletSecret]);
 
   const withdrawWallet = useCallback(() => {
     const s = socketRef.current;
@@ -1206,7 +1403,11 @@ export default function App() {
       <div className="topbar">
         <div className="logoWrap">
           <div className="logo">BTC Slides</div>
-          {editingAddr ? (
+          {lightningAddressLocked ? (
+            <div className="logoSub">
+              {lightningAddress.trim() || 'Fetching Speed lightning address...'}
+            </div>
+          ) : editingAddr ? (
             <div className="topAddrEdit">
               <input
                 className="input"
