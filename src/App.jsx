@@ -342,6 +342,13 @@ export default function App() {
   const [lightningAddressLocked, setLightningAddressLocked] = useState(false);
   const [betAmount, setBetAmount] = useState(() => localStorage.getItem('slidesBetAmount') || '20');
 
+  const displayLightningAddress = useMemo(() => {
+    const a = String(lightningAddress || '').trim();
+    if (!a) return '';
+    if (a.includes('@')) return a;
+    return `${a}@speed.app`;
+  }, [lightningAddress]);
+
   const [betOptions, setBetOptions] = useState([20, 100, 300, 500, 1000, 5000, 10000]);
   const [topUpOptions, setTopUpOptions] = useState([1000, 5000, 10000]);
   const [payoutTable, setPayoutTable] = useState(DEFAULT_PAYOUT_TABLE);
@@ -1408,7 +1415,7 @@ export default function App() {
           <div className="logo">BTC Slides</div>
           {lightningAddressLocked ? (
             <div className="logoSub">
-              {lightningAddress.trim() || 'Fetching Speed lightning address...'}
+              {displayLightningAddress.trim() || 'Fetching Speed lightning address...'}
             </div>
           ) : editingAddr ? (
             <div className="topAddrEdit">
@@ -1445,11 +1452,11 @@ export default function App() {
               className="logoSub"
               type="button"
               onClick={() => {
-                setAddrDraft(lightningAddress);
+                setAddrDraft(displayLightningAddress);
                 setEditingAddr(true);
               }}
             >
-              {lightningAddress.trim() || 'Tap to set lightning address'}
+              {displayLightningAddress.trim() || 'Tap to set lightning address'}
             </button>
           )}
         </div>
