@@ -934,7 +934,7 @@ export default function App() {
   const startSpin = useCallback(() => {
     const s = socketRef.current;
     if (!s) return;
-    if (spinLocked) return;
+    if (spinLocked || spinRevealPendingRef.current) return;
 
     const addr = lightningAddress.trim();
     if (!addr) {
