@@ -403,6 +403,10 @@ export default function App() {
   const copyTimeoutRef = useRef(null);
   const paymentWindowRef = useRef(null);
   const pendingAutoSpinBetRef = useRef(null);
+  const lastSpinActionAtRef = useRef(0);
+  const allowZeroBalanceRef = useRef(false);
+  const expectedAfterBetRef = useRef(null);
+  const expectedAfterBetAtRef = useRef(0);
   const pendingOutcomeRef = useRef(null);
   const pendingPayoutUpdateRef = useRef(null);
   const pendingWalletBalanceRef = useRef(null);
@@ -569,6 +573,8 @@ export default function App() {
       setPayButtonLoading(false);
       setSpinLocked(false);
       spinRevealPendingRef.current = false;
+      expectedAfterBetRef.current = null;
+      expectedAfterBetAtRef.current = 0;
       pendingOutcomeRef.current = null;
       pendingPayoutUpdateRef.current = null;
       pendingWalletBalanceRef.current = null;
@@ -580,6 +586,8 @@ export default function App() {
       setStatus(`Connection issue (retrying): ${msg}`);
       setSpinLocked(false);
       spinRevealPendingRef.current = false;
+      expectedAfterBetRef.current = null;
+      expectedAfterBetAtRef.current = 0;
       pendingOutcomeRef.current = null;
       pendingPayoutUpdateRef.current = null;
       pendingWalletBalanceRef.current = null;
@@ -660,6 +668,19 @@ export default function App() {
       if (!Number.isFinite(b)) return;
       const next = Math.max(0, Math.floor(b));
 
+      const nowMs = Date.now();
+      const allowZeroBecauseRecentSpin = nowMs - Number(lastSpinActionAtRef.current || 0) < 45 * 1000;
+      if (next === 0 && walletBalanceRef.current > 0 && !allowZeroBalanceRef.current && !allowZeroBecauseRecentSpin) {
+        return;
+      }
+
+      const expectedAt = Number(expectedAfterBetAtRef.current || 0);
+      const expected = Number(expectedAfterBetRef.current);
+      const expectedActive = Number.isFinite(expected) && expectedAt > 0 && (nowMs - expectedAt) < 45 * 1000;
+      if (expectedActive && !allowZeroBalanceRef.current && next < expected) {
+        return;
+      }
+
       if (spinRevealPendingRef.current && next > walletBalanceRef.current) {
         pendingWalletBalanceRef.current = next;
         return;
@@ -685,24 +706,46 @@ export default function App() {
     const onWithdrawalPending = ({ amountSats, recipient, balanceSats }) => {
       const a = Number(amountSats) || 0;
       logHistory({ type: 'withdraw_pending', amountSats: a, recipient, balanceSats });
+      allowZeroBalanceRef.current = true;
+      const b = Number(balanceSats);
+      if (Number.isFinite(b)) {
+        const next = Math.max(0, Math.floor(b));
+        walletBalanceRef.current = next;
+        setWalletBalance(next);
+      }
       setStatus(a > 0 ? `Withdrawing ${a} SATS...` : 'Withdrawing...');
     };
 
     const onWithdrawalSent = ({ amountSats, recipient, balanceSats }) => {
       const a = Number(amountSats) || 0;
       logHistory({ type: 'withdraw_sent', amountSats: a, recipient, balanceSats });
+      allowZeroBalanceRef.current = false;
+      const b = Number(balanceSats);
+      const next = Number.isFinite(b) ? Math.max(0, Math.floor(b)) : 0;
+      walletBalanceRef.current = next;
+      setWalletBalance(next);
       setStatus(a > 0 ? `Withdrawn ${a} SATS to ${recipient}` : `Withdrawn to ${recipient}`);
     };
 
     const onWithdrawalFailed = ({ amountSats, error, recipient, balanceSats }) => {
       const a = Number(amountSats) || 0;
       logHistory({ type: 'withdraw_failed', amountSats: a, recipient, balanceSats, error });
+      allowZeroBalanceRef.current = false;
+      const b = Number(balanceSats);
+      if (Number.isFinite(b)) {
+        const next = Math.max(0, Math.floor(b));
+        walletBalanceRef.current = next;
+        setWalletBalance(next);
+      }
       setStatus(a > 0 ? `Withdrawal failed for ${a} SATS: ${error}` : `Withdrawal failed: ${error}`);
     };
 
     const onAutoRefundSent = ({ amountSats, recipient }) => {
       const a = Number(amountSats) || 0;
       logHistory({ type: 'auto_refund_sent', amountSats: a, recipient });
+      allowZeroBalanceRef.current = false;
+      walletBalanceRef.current = 0;
+      setWalletBalance(0);
       setStatus(a > 0 ? `Auto-refund sent: ${a} SATS` : 'Auto-refund sent');
     };
 
@@ -793,6 +836,17 @@ export default function App() {
           })()
           : `Paid ${a} SATS to ${recipient}`);
 
+      const b = Number(balanceSats);
+      if (Number.isFinite(b)) {
+        const nextBal = Math.max(0, Math.floor(b));
+        if (spinRevealPendingRef.current || spinAnimating || spinStage !== 0) {
+          pendingWalletBalanceRef.current = nextBal;
+        } else {
+          walletBalanceRef.current = nextBal;
+          setWalletBalance(nextBal);
+        }
+      }
+
       if (spinRevealPendingRef.current || spinAnimating || spinStage !== 0) {
         pendingPayoutUpdateRef.current = { payoutStatus: payoutObj, statusText };
         return;
@@ -823,6 +877,8 @@ export default function App() {
       setPaymentInfo(null);
       setSpinLocked(false);
       spinRevealPendingRef.current = false;
+      expectedAfterBetRef.current = null;
+      expectedAfterBetAtRef.current = 0;
       pendingOutcomeRef.current = null;
       pendingPayoutUpdateRef.current = null;
       pendingWalletBalanceRef.current = null;
@@ -835,6 +891,8 @@ export default function App() {
       setPaymentInfo(null);
       setSpinLocked(false);
       spinRevealPendingRef.current = false;
+      expectedAfterBetRef.current = null;
+      expectedAfterBetAtRef.current = 0;
       pendingOutcomeRef.current = null;
       pendingPayoutUpdateRef.current = null;
       pendingWalletBalanceRef.current = null;
@@ -845,6 +903,8 @@ export default function App() {
       setPayButtonLoading(false);
       setSpinLocked(false);
       spinRevealPendingRef.current = false;
+      expectedAfterBetRef.current = null;
+      expectedAfterBetAtRef.current = 0;
       pendingOutcomeRef.current = null;
       pendingPayoutUpdateRef.current = null;
       pendingWalletBalanceRef.current = null;
@@ -1094,6 +1154,8 @@ export default function App() {
     if (spinLocked || spinRevealPendingRef.current) return;
     if (pendingAutoSpinBetRef.current) return;
 
+    lastSpinActionAtRef.current = Date.now();
+
     const addr = lightningAddress.trim();
     if (!addr) {
       setStatus('Enter your Speed lightning address');
@@ -1105,6 +1167,9 @@ export default function App() {
       setStatus('Choose a bet');
       return;
     }
+
+    expectedAfterBetRef.current = Math.max(0, Math.floor(Number(walletBalanceRef.current || 0) - bet));
+    expectedAfterBetAtRef.current = Date.now();
 
     if (walletBalance < bet) {
       const need = bet - walletBalance;
@@ -1153,6 +1218,10 @@ export default function App() {
     if (walletBalance < pendingBet) return;
 
     pendingAutoSpinBetRef.current = null;
+    lastSpinActionAtRef.current = Date.now();
+
+    expectedAfterBetRef.current = Math.max(0, Math.floor(Number(walletBalanceRef.current || 0) - pendingBet));
+    expectedAfterBetAtRef.current = Date.now();
 
     const s = socketRef.current;
     if (!s) return;
@@ -1191,6 +1260,7 @@ export default function App() {
     const ok = window.confirm(`Withdraw ${walletBalance} SATS to ${addr}?`);
     if (!ok) return;
 
+    allowZeroBalanceRef.current = true;
     setStatus('Withdrawing...');
     s.emit('withdraw', { walletId, walletSecret, lightningAddress: addr });
   }, [walletId, walletSecret, lightningAddress, walletBalance]);
@@ -1404,6 +1474,8 @@ export default function App() {
       }
 
       spinRevealPendingRef.current = false;
+      expectedAfterBetRef.current = null;
+      expectedAfterBetAtRef.current = 0;
       setSpinLocked(false);
     }
   }, [spinAnimating, spinStage, pushHistory]);
