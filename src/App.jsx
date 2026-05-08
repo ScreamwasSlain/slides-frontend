@@ -281,8 +281,323 @@ function downloadTextFile(filename, text, mime = 'text/plain') {
   }
 }
 
+function formatAdminNumber(value) {
+  const n = Math.floor(Number(value) || 0);
+  return n.toLocaleString('en-US');
+}
+
+function formatAdminDate(value) {
+  if (!value) return '-';
+  const ms = Date.parse(String(value));
+  if (!Number.isFinite(ms)) return '-';
+  return new Date(ms).toLocaleString();
+}
+
+function isAdminModeFromLocation() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('admin') === '1';
+  } catch {
+    return false;
+  }
+}
+
+function getAdminTokenFromLocation() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const fromQuery = String(params.get('token') || '').trim();
+    if (fromQuery) return fromQuery;
+  } catch {
+  }
+
+  try {
+    return String(localStorage.getItem('slidesAdminToken') || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function AdminDashboardApp({ backendUrl }) {
+  const [adminToken, setAdminToken] = useState(() => getAdminTokenFromLocation());
+  const [dashboard, setDashboard] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [search, setSearch] = useState('');
+
+  const loadDashboard = useCallback(async () => {
+    const token = String(adminToken || '').trim();
+    if (!token) {
+      setDashboard(null);
+      setError('Enter your admin token to load the treasury dashboard.');
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    try {
+      const base = String(backendUrl || '').replace(/\/$/, '');
+      const resp = await fetch(`${base}/admin/treasury?token=${encodeURIComponent(token)}`, {
+        method: 'GET',
+        cache: 'no-store'
+      });
+
+      let data = null;
+      try {
+        data = await resp.json();
+      } catch {
+      }
+
+      if (!resp.ok) {
+        throw new Error(String(data?.error || `Failed to load treasury dashboard (${resp.status})`));
+      }
+
+      setDashboard(data);
+    } catch (e) {
+      setDashboard(null);
+      setError(String(e?.message || e));
+    } finally {
+      setLoading(false);
+    }
+  }, [adminToken, backendUrl]);
+
+  useEffect(() => {
+    try {
+      if (String(adminToken || '').trim()) {
+        localStorage.setItem('slidesAdminToken', String(adminToken || '').trim());
+      }
+    } catch {
+    }
+  }, [adminToken]);
+
+  useEffect(() => {
+    loadDashboard();
+  }, [loadDashboard]);
+
+  useEffect(() => {
+    if (!String(adminToken || '').trim()) return undefined;
+    const timer = setInterval(() => {
+      loadDashboard();
+    }, 15000);
+    return () => clearInterval(timer);
+  }, [adminToken, loadDashboard]);
+
+  const filteredPlayers = useMemo(() => {
+    const q = String(search || '').trim().toLowerCase();
+    const players = Array.isArray(dashboard?.players) ? dashboard.players : [];
+    if (!q) return players;
+    return players.filter((p) => (
+      String(p?.walletId || '').toLowerCase().includes(q) ||
+      String(p?.lightningAddress || '').toLowerCase().includes(q)
+    ));
+  }, [dashboard?.players, search]);
+
+  const metricCards = [
+    { label: 'Total Liability', value: `${formatAdminNumber(dashboard?.totals?.totalLiabilitySats)} SATS` },
+    { label: 'Wallet Balance', value: `${formatAdminNumber(dashboard?.totals?.totalBalanceSats)} SATS` },
+    { label: 'Held In Withdrawals', value: `${formatAdminNumber(dashboard?.totals?.totalHoldSats)} SATS` },
+    { label: 'Players With Funds', value: formatAdminNumber(dashboard?.totals?.playersWithFundsCount) },
+    { label: 'Pending Withdrawals', value: formatAdminNumber(dashboard?.totals?.pendingWithdrawalCount) },
+    { label: 'Pending Amount', value: `${formatAdminNumber(dashboard?.totals?.pendingWithdrawalSats)} SATS` }
+  ];
+
+  const windowRows = [
+    ['Last Hour', dashboard?.metrics?.lastHour],
+    ['Last 24 Hours', dashboard?.metrics?.last24Hours],
+    ['All Time', dashboard?.metrics?.allTime]
+  ];
+
+  return (
+    <div className="shell" style={{ maxWidth: 1480 }}>
+      <div className="topbar">
+        <div className="logoWrap">
+          <div className="logo">BTC Slides Admin</div>
+          <div className="logoSub">Private treasury dashboard. Requires your `ADMIN_TOKEN`.</div>
+        </div>
+        <div className="conn ok">
+          {loading ? 'Refreshing...' : `Updated ${formatAdminDate(dashboard?.generatedAt)}`}
+        </div>
+      </div>
+
+      <div className="panel" style={{ marginBottom: 16 }}>
+        <div className="panelTitle">Access</div>
+        <div className="field" style={{ display: 'grid', gap: 10 }}>
+          <input
+            className="input"
+            type="password"
+            value={adminToken}
+            onChange={(e) => setAdminToken(e.target.value)}
+            placeholder="ADMIN_TOKEN"
+            autoComplete="off"
+          />
+          <div className="actions">
+            <button className="button" type="button" onClick={loadDashboard}>
+              Refresh Dashboard
+            </button>
+          </div>
+          <div className="muted">
+            Open this privately with <code>?admin=1&amp;token=YOUR_ADMIN_TOKEN</code>. Regular players cannot access these endpoints without the token.
+          </div>
+          {error ? <div className="panelNote" style={{ color: '#ff9b9b' }}>{error}</div> : null}
+        </div>
+      </div>
+
+      <div className="layout" style={{ gridTemplateColumns: '1fr' }}>
+        <div className="panel">
+          <div className="panelTitle">Treasury Snapshot</div>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+              gap: 12
+            }}
+          >
+            {metricCards.map((card) => (
+              <div
+                key={card.label}
+                style={{
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  borderRadius: 14,
+                  padding: 14,
+                  background: 'rgba(255,255,255,0.03)'
+                }}
+              >
+                <div className="muted" style={{ fontSize: 12 }}>{card.label}</div>
+                <div style={{ fontSize: 22, fontWeight: 700, marginTop: 6 }}>{card.value}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="panel">
+          <div className="panelTitle">Profit And Payout Metrics</div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+              <thead>
+                <tr style={{ textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.12)' }}>
+                  <th style={{ padding: '10px 8px' }}>Window</th>
+                  <th style={{ padding: '10px 8px' }}>Bets</th>
+                  <th style={{ padding: '10px 8px' }}>Payouts</th>
+                  <th style={{ padding: '10px 8px' }}>Gross Gaming Rev</th>
+                  <th style={{ padding: '10px 8px' }}>Deposits</th>
+                  <th style={{ padding: '10px 8px' }}>Withdrawn</th>
+                  <th style={{ padding: '10px 8px' }}>Refunded</th>
+                  <th style={{ padding: '10px 8px' }}>Payout Fail Rate</th>
+                  <th style={{ padding: '10px 8px' }}>Refund Fail Rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                {windowRows.map(([label, stats]) => (
+                  <tr key={label} style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                    <td style={{ padding: '10px 8px', fontWeight: 600 }}>{label}</td>
+                    <td style={{ padding: '10px 8px' }}>{formatAdminNumber(stats?.spinBetSats)} SATS</td>
+                    <td style={{ padding: '10px 8px' }}>{formatAdminNumber(stats?.spinPayoutSats)} SATS</td>
+                    <td style={{ padding: '10px 8px' }}>{formatAdminNumber(stats?.grossGamingRevenueSats)} SATS</td>
+                    <td style={{ padding: '10px 8px' }}>{formatAdminNumber(stats?.depositsCreditedSats)} SATS</td>
+                    <td style={{ padding: '10px 8px' }}>{formatAdminNumber(stats?.withdrawalsSentSats)} SATS</td>
+                    <td style={{ padding: '10px 8px' }}>{formatAdminNumber(stats?.autoRefundSentSats)} SATS</td>
+                    <td style={{ padding: '10px 8px' }}>{`${Number(stats?.payoutFailureRate || 0) * 100}%`}</td>
+                    <td style={{ padding: '10px 8px' }}>{`${Number(stats?.autoRefundFailureRate || 0) * 100}%`}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="panel">
+          <div className="panelTitle">Players</div>
+          <div className="field" style={{ display: 'grid', gap: 10 }}>
+            <input
+              className="input"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Filter by wallet ID or lightning address"
+              autoComplete="off"
+            />
+            <div className="muted">
+              Showing {formatAdminNumber(filteredPlayers.length)} of {formatAdminNumber(dashboard?.players?.length)} players.
+            </div>
+          </div>
+
+          <div style={{ overflowX: 'auto', marginTop: 8 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.12)' }}>
+                  <th style={{ padding: '10px 8px' }}>Wallet</th>
+                  <th style={{ padding: '10px 8px' }}>Lightning Address</th>
+                  <th style={{ padding: '10px 8px' }}>Balance</th>
+                  <th style={{ padding: '10px 8px' }}>Hold</th>
+                  <th style={{ padding: '10px 8px' }}>Total</th>
+                  <th style={{ padding: '10px 8px' }}>Pending</th>
+                  <th style={{ padding: '10px 8px' }}>Last Activity</th>
+                  <th style={{ padding: '10px 8px' }}>Updated</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredPlayers.map((player) => (
+                  <tr key={player.walletId} style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                    <td style={{ padding: '10px 8px', fontFamily: 'monospace' }}>{String(player.walletId || '').slice(0, 12)}...</td>
+                    <td style={{ padding: '10px 8px' }}>{player.lightningAddress || '-'}</td>
+                    <td style={{ padding: '10px 8px' }}>{formatAdminNumber(player.balanceSats)} SATS</td>
+                    <td style={{ padding: '10px 8px' }}>{formatAdminNumber(player.holdSats)} SATS</td>
+                    <td style={{ padding: '10px 8px', fontWeight: 700 }}>{formatAdminNumber(player.totalSats)} SATS</td>
+                    <td style={{ padding: '10px 8px' }}>{player.hasPendingWithdrawal ? 'Yes' : 'No'}</td>
+                    <td style={{ padding: '10px 8px' }}>{formatAdminDate(player.lastActivityAt)}</td>
+                    <td style={{ padding: '10px 8px' }}>{formatAdminDate(player.updatedAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="panel">
+          <div className="panelTitle">Recent Treasury Events</div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.12)' }}>
+                  <th style={{ padding: '10px 8px' }}>Time</th>
+                  <th style={{ padding: '10px 8px' }}>Type</th>
+                  <th style={{ padding: '10px 8px' }}>Wallet</th>
+                  <th style={{ padding: '10px 8px' }}>Amount</th>
+                  <th style={{ padding: '10px 8px' }}>Recipient</th>
+                  <th style={{ padding: '10px 8px' }}>Error</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(dashboard?.recentEvents || []).map((event) => (
+                  <tr key={event.id || `${event.ts}-${event.type}`} style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                    <td style={{ padding: '10px 8px' }}>{formatAdminDate(event.ts)}</td>
+                    <td style={{ padding: '10px 8px' }}>{event.type || '-'}</td>
+                    <td style={{ padding: '10px 8px', fontFamily: 'monospace' }}>
+                      {event.walletId ? `${String(event.walletId).slice(0, 12)}...` : '-'}
+                    </td>
+                    <td style={{ padding: '10px 8px' }}>
+                      {formatAdminNumber(event.amountSats || event.betAmount || event.payoutAmount)} SATS
+                    </td>
+                    <td style={{ padding: '10px 8px' }}>{event.recipient || event.lightningAddress || '-'}</td>
+                    <td style={{ padding: '10px 8px', color: '#ff9b9b' }}>{event.error || '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const backendUrl = import.meta.env.VITE_BACKEND_URL || DEFAULT_BACKEND_URL;
+  const adminMode = isAdminModeFromLocation();
+  if (adminMode) return <AdminDashboardApp backendUrl={backendUrl} />;
+  return <GameApp backendUrl={backendUrl} />;
+}
+
+function GameApp({ backendUrl }) {
   const keepAliveMs = useMemo(() => {
     const raw = import.meta.env.VITE_KEEPALIVE_MS;
     const n = raw == null ? NaN : Number(raw);
