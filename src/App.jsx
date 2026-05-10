@@ -529,6 +529,13 @@ function AdminDashboardApp({ backendUrl }) {
                   <th style={{ padding: '10px 8px' }}>Balance</th>
                   <th style={{ padding: '10px 8px' }}>Hold</th>
                   <th style={{ padding: '10px 8px' }}>Total</th>
+                  <th style={{ padding: '10px 8px' }}>Spins</th>
+                  <th style={{ padding: '10px 8px' }}>Bet Total</th>
+                  <th style={{ padding: '10px 8px' }}>Payout Total</th>
+                  <th style={{ padding: '10px 8px' }}>Game Profit</th>
+                  <th style={{ padding: '10px 8px' }}>Deposits</th>
+                  <th style={{ padding: '10px 8px' }}>Withdrawn</th>
+                  <th style={{ padding: '10px 8px' }}>Refunded</th>
                   <th style={{ padding: '10px 8px' }}>Pending</th>
                   <th style={{ padding: '10px 8px' }}>Last Activity</th>
                   <th style={{ padding: '10px 8px' }}>Updated</th>
@@ -542,6 +549,13 @@ function AdminDashboardApp({ backendUrl }) {
                     <td style={{ padding: '10px 8px' }}>{formatAdminNumber(player.balanceSats)} SATS</td>
                     <td style={{ padding: '10px 8px' }}>{formatAdminNumber(player.holdSats)} SATS</td>
                     <td style={{ padding: '10px 8px', fontWeight: 700 }}>{formatAdminNumber(player.totalSats)} SATS</td>
+                    <td style={{ padding: '10px 8px' }}>{formatAdminNumber(player.stats?.spinsMade)}</td>
+                    <td style={{ padding: '10px 8px' }}>{formatAdminNumber(player.stats?.totalBetSats)} SATS</td>
+                    <td style={{ padding: '10px 8px' }}>{formatAdminNumber(player.stats?.totalPayoutSats)} SATS</td>
+                    <td style={{ padding: '10px 8px', fontWeight: 700 }}>{formatAdminNumber(player.stats?.gameplayNetSats)} SATS</td>
+                    <td style={{ padding: '10px 8px' }}>{formatAdminNumber(player.stats?.depositsCreditedSats)} SATS</td>
+                    <td style={{ padding: '10px 8px' }}>{formatAdminNumber(player.stats?.withdrawalsSentSats)} SATS</td>
+                    <td style={{ padding: '10px 8px' }}>{formatAdminNumber(player.stats?.autoRefundSentSats)} SATS</td>
                     <td style={{ padding: '10px 8px' }}>{player.hasPendingWithdrawal ? 'Yes' : 'No'}</td>
                     <td style={{ padding: '10px 8px' }}>{formatAdminDate(player.lastActivityAt)}</td>
                     <td style={{ padding: '10px 8px' }}>{formatAdminDate(player.updatedAt)}</td>
