@@ -481,9 +481,7 @@ function AdminDashboardApp({ backendUrl }) {
                   <th style={{ padding: '10px 8px' }}>Gross Gaming Rev</th>
                   <th style={{ padding: '10px 8px' }}>Deposits</th>
                   <th style={{ padding: '10px 8px' }}>Withdrawn</th>
-                  <th style={{ padding: '10px 8px' }}>Refunded</th>
                   <th style={{ padding: '10px 8px' }}>Payout Fail Rate</th>
-                  <th style={{ padding: '10px 8px' }}>Refund Fail Rate</th>
                 </tr>
               </thead>
               <tbody>
@@ -495,9 +493,7 @@ function AdminDashboardApp({ backendUrl }) {
                     <td style={{ padding: '10px 8px' }}>{formatAdminNumber(stats?.grossGamingRevenueSats)} SATS</td>
                     <td style={{ padding: '10px 8px' }}>{formatAdminNumber(stats?.depositsCreditedSats)} SATS</td>
                     <td style={{ padding: '10px 8px' }}>{formatAdminNumber(stats?.withdrawalsSentSats)} SATS</td>
-                    <td style={{ padding: '10px 8px' }}>{formatAdminNumber(stats?.autoRefundSentSats)} SATS</td>
                     <td style={{ padding: '10px 8px' }}>{`${Number(stats?.payoutFailureRate || 0) * 100}%`}</td>
-                    <td style={{ padding: '10px 8px' }}>{`${Number(stats?.autoRefundFailureRate || 0) * 100}%`}</td>
                   </tr>
                 ))}
               </tbody>
@@ -535,7 +531,6 @@ function AdminDashboardApp({ backendUrl }) {
                   <th style={{ padding: '10px 8px' }}>Game Profit</th>
                   <th style={{ padding: '10px 8px' }}>Deposits</th>
                   <th style={{ padding: '10px 8px' }}>Withdrawn</th>
-                  <th style={{ padding: '10px 8px' }}>Refunded</th>
                   <th style={{ padding: '10px 8px' }}>Pending</th>
                   <th style={{ padding: '10px 8px' }}>Last Activity</th>
                   <th style={{ padding: '10px 8px' }}>Updated</th>
@@ -555,7 +550,6 @@ function AdminDashboardApp({ backendUrl }) {
                     <td style={{ padding: '10px 8px', fontWeight: 700 }}>{formatAdminNumber(player.stats?.gameplayNetSats)} SATS</td>
                     <td style={{ padding: '10px 8px' }}>{formatAdminNumber(player.stats?.depositsCreditedSats)} SATS</td>
                     <td style={{ padding: '10px 8px' }}>{formatAdminNumber(player.stats?.withdrawalsSentSats)} SATS</td>
-                    <td style={{ padding: '10px 8px' }}>{formatAdminNumber(player.stats?.autoRefundSentSats)} SATS</td>
                     <td style={{ padding: '10px 8px' }}>{player.hasPendingWithdrawal ? 'Yes' : 'No'}</td>
                     <td style={{ padding: '10px 8px' }}>{formatAdminDate(player.lastActivityAt)}</td>
                     <td style={{ padding: '10px 8px' }}>{formatAdminDate(player.updatedAt)}</td>
@@ -639,7 +633,10 @@ function GameApp({ backendUrl }) {
       const raw = localStorage.getItem(historyKey);
       if (!raw) return [];
       const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : [];
+      const visibleTypes = new Set(['deposit', 'withdraw_pending', 'withdraw_sent', 'withdraw_failed', 'spin']);
+      return Array.isArray(parsed)
+        ? parsed.filter((item) => visibleTypes.has(String(item?.type || '')))
+        : [];
     } catch {
       return [];
     }
@@ -1069,21 +1066,6 @@ function GameApp({ backendUrl }) {
       setStatus(a > 0 ? `Withdrawal failed for ${a} SATS: ${error}` : `Withdrawal failed: ${error}`);
     };
 
-    const onAutoRefundSent = ({ amountSats, recipient }) => {
-      const a = Number(amountSats) || 0;
-      logHistory({ type: 'auto_refund_sent', amountSats: a, recipient });
-      allowZeroBalanceRef.current = false;
-      walletBalanceRef.current = 0;
-      setWalletBalance(0);
-      setStatus(a > 0 ? `Auto-refund sent: ${a} SATS` : 'Auto-refund sent');
-    };
-
-    const onAutoRefundFailed = ({ amountSats, error, recipient }) => {
-      const a = Number(amountSats) || 0;
-      logHistory({ type: 'auto_refund_failed', amountSats: a, recipient, error });
-      setStatus(a > 0 ? `Auto-refund failed for ${a} SATS: ${error}` : `Auto-refund failed: ${error}`);
-    };
-
     const onSpinOutcome = ({ betAmount: bet, payoutAmount, payoutOptions, payoutWeights }) => {
       setShowPaymentModal(false);
       pendingOutcomeRef.current = { betAmount: bet, payoutAmount, payoutOptions };
@@ -1258,8 +1240,6 @@ function GameApp({ backendUrl }) {
     s.on('withdrawalPending', onWithdrawalPending);
     s.on('withdrawalSent', onWithdrawalSent);
     s.on('withdrawalFailed', onWithdrawalFailed);
-    s.on('autoRefundSent', onAutoRefundSent);
-    s.on('autoRefundFailed', onAutoRefundFailed);
 
     return () => {
       s.disconnect();
@@ -1895,9 +1875,6 @@ function GameApp({ backendUrl }) {
               History
             </button>
 
-            <div className="muted" style={{ marginTop: 10 }}>
-              Unused wallet balance auto-refunds after 30 minutes of inactivity.
-            </div>
           </div>
 
           <div className="field">
@@ -2059,7 +2036,7 @@ function GameApp({ backendUrl }) {
             </div>
 
             <div className="muted">
-              Spins, deposits, withdrawals, and auto-refunds for this wallet.
+              Spins, deposits, and withdrawals for this wallet.
             </div>
 
             <div style={{ marginTop: 12, maxHeight: 420, overflow: 'auto' }}>
@@ -2085,12 +2062,6 @@ function GameApp({ backendUrl }) {
                     sub = h?.recipient ? `To: ${h.recipient}` : '';
                   } else if (t === 'withdraw_failed') {
                     title = Number.isFinite(amt) && amt > 0 ? `Withdrawal failed ${amt} SATS` : 'Withdrawal failed';
-                    sub = h?.error ? String(h.error) : '';
-                  } else if (t === 'auto_refund_sent') {
-                    title = Number.isFinite(amt) && amt > 0 ? `Auto-refund sent ${amt} SATS` : 'Auto-refund sent';
-                    sub = h?.recipient ? `To: ${h.recipient}` : '';
-                  } else if (t === 'auto_refund_failed') {
-                    title = Number.isFinite(amt) && amt > 0 ? `Auto-refund failed ${amt} SATS` : 'Auto-refund failed';
                     sub = h?.error ? String(h.error) : '';
                   } else if (t === 'spin') {
                     title = `Spin bet ${Number.isFinite(bet) ? bet : 0} SATS`;
@@ -2261,9 +2232,6 @@ function GameApp({ backendUrl }) {
               <button className="legalLink" type="button" onClick={() => openLegal('privacy')}>Privacy Policy</button>.
             </div>
 
-            <div className="muted" style={{ marginTop: 12 }}>
-              Unused wallet balance auto-refunds after 30 minutes of inactivity.
-            </div>
           </div>
         </div>
       ) : null}
@@ -2295,7 +2263,7 @@ function GameApp({ backendUrl }) {
 
                   <div className="legalH">2. Information we collect</div>
                   <ul className="legalUl">
-                    <li>Lightning address you provide (used to bind your in-game wallet and send withdrawals/auto-refunds).</li>
+                    <li>Lightning address you provide (used to bind your in-game wallet and send withdrawals).</li>
                     <li>Wallet identifiers (e.g., wallet ID) and authentication material (e.g., wallet secret) used to operate the wallet system.</li>
                     <li>Gameplay and wallet events (bets, spins, outcomes, timestamps) for operating the service, fraud prevention, and support.</li>
                     <li>Technical data (IP address, user agent, logs) to secure and maintain the service.</li>
@@ -2313,7 +2281,7 @@ function GameApp({ backendUrl }) {
                   </ul>
 
                   <div className="legalH">5. Sharing</div>
-                  <div className="legalP">We share information with (a) the payment provider to create invoices and send withdrawals/auto-refunds, and (b) infrastructure providers (hosting, monitoring) to run the service. We may also share information if required by law or to protect our rights and users.</div>
+                  <div className="legalP">We share information with (a) the payment provider to create invoices and send withdrawals, and (b) infrastructure providers (hosting, monitoring) to run the service. We may also share information if required by law or to protect our rights and users.</div>
 
                   <div className="legalH">6. Retention</div>
                   <div className="legalP">We retain information as needed to operate the service, maintain wallet balances, prevent abuse, resolve disputes, and comply with legal obligations. Retention periods can vary depending on jurisdiction and operational needs.</div>
@@ -2322,7 +2290,7 @@ function GameApp({ backendUrl }) {
                   <div className="legalP">We use reasonable safeguards, but no system is perfectly secure. You are responsible for securing your devices and any credentials you use. Use the service at your own risk.</div>
 
                   <div className="legalH">8. Your choices</div>
-                  <div className="legalP">You may withdraw your in-game wallet balance to your lightning address. If you stop using the service, the system may auto-refund remaining wallet balance after a period of inactivity.</div>
+                  <div className="legalP">You may withdraw your in-game wallet balance to your lightning address.</div>
 
                   <div className="legalH">9. International users</div>
                   <div className="legalP">By using the service, you understand your information may be processed in the jurisdictions where we or our providers operate.</div>
@@ -2344,7 +2312,7 @@ function GameApp({ backendUrl }) {
                   <ul className="legalUl">
                     <li>Deposits and winnings are credited to an in-game wallet balance.</li>
                     <li>You may request withdrawal to your provided lightning address.</li>
-                    <li>Withdrawals and auto-refunds are best-effort and depend on provider/network availability and risk controls.</li>
+                    <li>Withdrawals are best-effort and depend on provider/network availability and risk controls.</li>
                   </ul>
 
                   <div className="legalH">5. No warranties</div>
